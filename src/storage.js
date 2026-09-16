@@ -8,7 +8,10 @@ const DEFAULTS = {
   settings: {
     autoMark: true,
     showTimer: true,
+    strict: true, // three mistakes and the puzzle is over
+    mascot: 'cat',
   },
+  daily: {}, // 'YYYY-MM-DD' -> { seconds, mistakes }
   lastLevel: 1,
 };
 
@@ -22,6 +25,7 @@ function read() {
       ...saved,
       settings: { ...DEFAULTS.settings, ...(saved.settings || {}) },
       progress: saved.progress || {},
+      daily: saved.daily || {},
     };
   } catch {
     return structuredClone(DEFAULTS);
@@ -82,6 +86,38 @@ export function highestUnlocked() {
   let level = 1;
   while (level < 100 && state.progress[level]) level++;
   return level;
+}
+
+/* ── Daily challenge ─────────────────────────────── */
+
+export function dateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getDailyRecord(key) {
+  return state.daily[key] || null;
+}
+
+export function recordDaily(key, seconds, mistakes) {
+  if (state.daily[key]) return;
+  state.daily[key] = { seconds, mistakes };
+  write(state);
+}
+
+/** How many days in a row, counting back from today (or yesterday). */
+export function dailyStreak() {
+  const day = new Date();
+  if (!state.daily[dateKey(day)]) day.setDate(day.getDate() - 1);
+
+  let streak = 0;
+  while (state.daily[dateKey(day)]) {
+    streak++;
+    day.setDate(day.getDate() - 1);
+  }
+  return streak;
 }
 
 export function resetAll() {

@@ -1,7 +1,7 @@
 {
-  "name": "shiba-grid",
+  "name": "grid-hunt",
   "version": "1.0.0",
-  "description": "柴犬謎陣 — 100 關邏輯推理謎題，純靜態網頁遊戲",
+  "description": "謎陣 — 100 關邏輯推理謎題 + 每日挑戰，純靜態網頁遊戲",
   "type": "module",
   "private": true,
   "scripts": {
