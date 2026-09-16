@@ -5,6 +5,30 @@
 
 export const MASCOTS = [
   {
+    id: 'poop',
+    name: '大便',
+    unit: '坨',
+    accent: '#8b5c37',
+    // Toilets stand in for the crosses: a flat silhouette, because this glyph
+    // ends up on most of the board at low opacity.
+    mark: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="5.5" y="2" width="13" height="6.5" rx="1.8"/>
+      <path d="M2.2 9.8h19.6v1.6c0 2.7-1.9 5-4.6 5.7v2.4H7.4v-2.4c-2.7-.7-4.6-3-4.6-5.7z"/>
+      <rect x="4.6" y="19.6" width="14.8" height="2.4" rx="1.2"/>
+    </svg>`,
+    svg: `<svg class="mascot" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <ellipse cx="32" cy="13" rx="5" ry="4" fill="#a5713f"/>
+      <ellipse cx="32" cy="21" rx="9.6" ry="6" fill="#99673e"/>
+      <ellipse cx="32" cy="32" rx="14.6" ry="8" fill="#8b5c37"/>
+      <ellipse cx="32" cy="45.5" rx="20" ry="10" fill="#7d5130"/>
+      <ellipse cx="25.6" cy="30.4" rx="3.6" ry="4.2" fill="#fff"/>
+      <ellipse cx="38.4" cy="30.4" rx="3.6" ry="4.2" fill="#fff"/>
+      <circle cx="26.2" cy="31" r="2" fill="#2b1f15"/>
+      <circle cx="39" cy="31" r="2" fill="#2b1f15"/>
+      <path d="M24 39.5q8 6.5 16 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </svg>`,
+  },
+  {
     id: 'cat',
     name: '貓咪',
     unit: '隻',
@@ -166,7 +190,7 @@ export const MASCOTS = [
   },
 ];
 
-export const DEFAULT_MASCOT = 'cat';
+export const DEFAULT_MASCOT = 'poop';
 
 export function getMascot(id) {
   return MASCOTS.find((mascot) => mascot.id === id) || MASCOTS[0];

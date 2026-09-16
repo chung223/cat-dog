@@ -9,7 +9,7 @@ const DEFAULTS = {
     autoMark: true,
     showTimer: true,
     strict: true, // three mistakes and the puzzle is over
-    mascot: 'cat',
+    mascot: 'poop',
   },
   daily: {}, // 'YYYY-MM-DD' -> { seconds, mistakes }
   lastLevel: 1,

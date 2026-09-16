@@ -39,6 +39,11 @@ let mascot = getMascot(store.getSettings().mascot);
 
 /* ── Mascot theme ────────────────────────────────── */
 
+/** Mascots may ship their own cross glyph; the rest fall back to a plain X. */
+function markClass() {
+  return mascot.mark ? 'mark mark-icon' : 'mark';
+}
+
 function applyMascot(id) {
   mascot = getMascot(id);
   document.documentElement.style.setProperty('--accent', mascot.accent);
@@ -47,7 +52,12 @@ function applyMascot(id) {
   $('hero-title').textContent = `${mascot.name}謎陣`;
   for (const node of document.querySelectorAll('.mascot-name')) node.textContent = mascot.name;
   for (const id of ['hero-art', 'win-art', 'fail-art']) $(id).innerHTML = mascot.svg;
-  for (const cell of state.cellNodes) cell.querySelector('.pet').innerHTML = mascot.svg;
+  for (const cell of state.cellNodes) {
+    cell.querySelector('.pet').innerHTML = mascot.svg;
+    const mark = cell.querySelector('.mark');
+    mark.className = markClass();
+    mark.innerHTML = mascot.mark ?? '';
+  }
 
   for (const option of document.querySelectorAll('.mascot-option')) {
     option.setAttribute('aria-pressed', String(option.dataset.mascot === mascot.id));
@@ -240,7 +250,9 @@ function buildBoard() {
     if (col < size - 1 && regions[index + 1] !== region) edges.push(`inset -${thickness}px 0 var(--region-line)`);
     cell.style.boxShadow = edges.join(',');
 
-    cell.innerHTML = `<span class="mark"></span><span class="pet">${mascot.svg}</span>`;
+    cell.innerHTML =
+      `<span class="${markClass()}">${mascot.mark ?? ''}</span>` +
+      `<span class="pet">${mascot.svg}</span>`;
     fragment.append(cell);
     state.cellNodes.push(cell);
   }
