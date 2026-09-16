@@ -323,18 +323,30 @@ export function rate(size, regions) {
   const context = buildContext(size, regions);
   const state = new Int8Array(context.cells);
   const counts = [0, 0, 0, 0, 0];
+  const firstUse = [0, 0, 0, 0, 0]; // 1-based step at which each tier first fires
+  let step = 0;
 
   for (let guard = 0; guard < 4000; guard++) {
     if (complete(context, state)) {
       const tier = counts.reduce((top, count, i) => (count > 0 ? i + 1 : top), 1);
-      return { solved: true, tier, counts, effort: counts.reduce((a, b) => a + b, 0) };
+      return {
+        solved: true,
+        tier,
+        counts,
+        effort: counts.reduce((a, b) => a + b, 0),
+        // How soon the hardest technique is needed. A lesson wants this small,
+        // so the student meets the point of the lesson straight away.
+        topAt: firstUse[tier - 1],
+      };
     }
     if (broken(context, state)) break;
 
     let moved = false;
     for (let i = 0; i < STEPS.length; i++) {
       if (STEPS[i](context, state)) {
+        step++;
         counts[i]++;
+        if (firstUse[i] === 0) firstUse[i] = step;
         moved = true;
         break;
       }
@@ -342,20 +354,25 @@ export function rate(size, regions) {
     if (!moved) break;
   }
 
-  return { solved: false, tier: null, counts, effort: 0 };
+  return { solved: false, tier: null, counts, effort: 0, topAt: 0 };
 }
 
 /**
- * Work out the next logical move from the pieces the player has already put
- * down. Returns the technique that cracks it, why, and which cells matter.
+ * Work out the next logical move from where the player actually is. The
+ * crosses matter as much as the pieces: without them a hint that only rules
+ * squares out would come back identical every time, because the board it
+ * reasons from would never change.
  */
-export function findNext(size, regions, placements) {
+export function findNext(size, regions, placements, crossed = []) {
   const context = buildContext(size, regions);
   const state = new Int8Array(context.cells);
 
   for (const index of placements) {
     if (state[index] === EXCLUDED) return { type: 'wrong', index };
     place(context, state, index);
+  }
+  for (const index of crossed) {
+    if (state[index] === UNKNOWN) state[index] = EXCLUDED;
   }
   if (broken(context, state)) return { type: 'wrong', index: placements[placements.length - 1] };
   if (complete(context, state)) return { type: 'done' };

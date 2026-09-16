@@ -109,13 +109,29 @@ export const LEVELS = [
 ];
 
 export function loadLevel(number) {
-  const level = LEVELS.find((entry) => entry.n === number);
-  if (!level) return null;
+  return unpack(LEVELS.find((entry) => entry.n === number));
+}
+
+// One teaching board per technique, keyed by tier.
+export const LESSONS = [
+  { d: 1, s: 5, r: '0211122111421134414344444', a: '03142' },
+  { d: 2, s: 5, r: '0000000010022102223344444', a: '03142' },
+  { d: 3, s: 6, r: '111002111122331222311222331442335552', a: '315042' },
+  { d: 4, s: 6, r: '000011020011020111223344225344255554', a: '041352' },
+  { d: 5, s: 6, r: '233100233114223144233334233344553344', a: '530241' },
+];
+
+export function loadLesson(tier) {
+  return unpack(LESSONS.find((entry) => entry.d === tier));
+}
+
+function unpack(entry) {
+  if (!entry) return null;
   return {
-    number: level.n,
-    size: level.s,
-    tier: level.d,
-    regions: [...level.r].map(Number),
-    solution: [...level.a].map(Number),
+    number: entry.n,
+    size: entry.s,
+    tier: entry.d,
+    regions: [...entry.r].map(Number),
+    solution: [...entry.a].map(Number),
   };
 }

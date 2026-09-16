@@ -62,6 +62,7 @@
         <button class="btn btn-primary" id="btn-continue" type="button">開始第 1 關</button>
         <button class="btn" id="btn-levels" type="button">選擇關卡</button>
         <button class="btn" id="btn-endless" type="button">無盡模式</button>
+        <button class="btn" id="btn-lessons" type="button">玩法教學</button>
         <button class="btn btn-quiet" id="btn-rules" type="button">玩法說明</button>
       </div>
     </section>
@@ -79,6 +80,12 @@
         <div class="hud-item"><span class="hud-label" id="hud-level-label">關卡</span><strong id="hud-level">1</strong></div>
         <div class="hud-item"><span class="hud-label mascot-name">大便</span><strong id="hud-count">0 / 5</strong></div>
         <div class="hud-item" id="hud-timer-wrap"><span class="hud-label">時間</span><strong id="hud-timer">0:00</strong></div>
+      </div>
+
+      <div class="lesson-banner" id="lesson-banner" hidden>
+        <span class="lesson-tag" id="lesson-tag">第 1 課</span>
+        <strong id="lesson-name">唯一格</strong>
+        <p id="lesson-hint"></p>
       </div>
 
       <div class="lives" id="lives" hidden></div>
@@ -156,11 +163,31 @@
   <form method="dialog"><button class="btn btn-primary" value="close">完成</button></form>
 </dialog>
 
+<dialog class="sheet" id="dlg-lessons">
+  <h2>玩法教學</h2>
+  <p class="sheet-note">五種推理，一課一種。每課都是一張小盤面，剛好非用那一招不可。</p>
+  <div class="lesson-list" id="lesson-list"></div>
+  <form method="dialog"><button class="btn btn-quiet" value="close">關閉</button></form>
+</dialog>
+
+<dialog class="sheet" id="dlg-offer">
+  <h2 id="offer-title">新技巧登場</h2>
+  <p class="sheet-note" id="offer-text"></p>
+  <div class="win-actions">
+    <button class="btn btn-primary" id="btn-offer-learn" type="button">先上一課</button>
+    <button class="btn btn-quiet" id="btn-offer-skip" type="button">直接玩</button>
+  </div>
+</dialog>
+
 <dialog class="sheet" id="dlg-endless">
   <h2>無盡模式</h2>
-  <p class="win-stats">選一個盤面大小，題目每次重新產生，永遠不會重複。</p>
+  <p class="sheet-note">題目每次重新產生，永遠不會重複。</p>
+  <h3>盤面大小</h3>
   <div class="size-grid" id="size-grid"></div>
-  <form method="dialog"><button class="btn btn-quiet" value="close">取消</button></form>
+  <h3>難度</h3>
+  <p class="sheet-note">指定難度要一直重抽到抽中為止，大盤面可能要等一兩秒。</p>
+  <div class="tier-grid" id="tier-grid"></div>
+  <form method="dialog"><button class="btn btn-primary" id="btn-endless-go" value="close">開始</button></form>
 </dialog>
 
 <dialog class="sheet sheet-win" id="dlg-win">
@@ -169,6 +196,7 @@
   <p class="win-stats" id="win-stats"></p>
   <div class="win-actions">
     <button class="btn btn-primary" id="btn-win-next" type="button">下一關</button>
+    <button class="btn" id="btn-win-share" type="button" hidden>分享成績</button>
     <button class="btn" id="btn-win-replay" type="button">再玩一次</button>
     <button class="btn btn-quiet" id="btn-win-levels" type="button">回關卡列表</button>
   </div>
@@ -184,6 +212,13 @@
     <button class="btn btn-quiet" id="btn-fail-back" type="button">先離開</button>
   </div>
 </dialog>
+
+<div class="veil" id="veil" hidden>
+  <div class="veil-card">
+    <div class="veil-spinner" aria-hidden="true"></div>
+    <p id="veil-text">出題中…</p>
+  </div>
+</div>
 
 <script type="module" src="src/main.js"></script>
 </body>

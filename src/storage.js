@@ -12,6 +12,8 @@ const DEFAULTS = {
     mascot: 'poop',
   },
   daily: {}, // 'YYYY-MM-DD' -> { seconds, mistakes }
+  boards: {}, // 'campaign:40' | 'daily:2026-09-16' | 'endless' -> board in progress
+  lessons: {}, // technique tier -> true once its lesson is finished
   lastLevel: 1,
 };
 
@@ -26,6 +28,8 @@ function read() {
       settings: { ...DEFAULTS.settings, ...(saved.settings || {}) },
       progress: saved.progress || {},
       daily: saved.daily || {},
+      boards: saved.boards || {},
+      lessons: saved.lessons || {},
     };
   } catch {
     return structuredClone(DEFAULTS);
@@ -86,6 +90,56 @@ export function highestUnlocked() {
   let level = 1;
   while (level < 100 && state.progress[level]) level++;
   return level;
+}
+
+/* ── Boards left half-finished ───────────────────── */
+
+const MAX_BOARDS = 30;
+
+export function saveBoard(key, board) {
+  state.boards[key] = { ...board, at: Date.now() };
+
+  const keys = Object.keys(state.boards);
+  if (keys.length > MAX_BOARDS) {
+    keys
+      .sort((a, b) => state.boards[a].at - state.boards[b].at)
+      .slice(0, keys.length - MAX_BOARDS)
+      .forEach((old) => delete state.boards[old]);
+  }
+  write(state);
+}
+
+export function loadBoard(key) {
+  return state.boards[key] || null;
+}
+
+export function clearBoard(key) {
+  if (!state.boards[key]) return;
+  delete state.boards[key];
+  write(state);
+}
+
+/** The board the player was most recently in the middle of, if any. */
+export function latestBoard() {
+  const entries = Object.entries(state.boards);
+  if (entries.length === 0) return null;
+  const [key, board] = entries.sort((a, b) => b[1].at - a[1].at)[0];
+  return { key, ...board };
+}
+
+/* ── Tutorial lessons ────────────────────────────── */
+
+export function lessonDone(tier) {
+  return Boolean(state.lessons[tier]);
+}
+
+export function markLessonDone(tier) {
+  state.lessons[tier] = true;
+  write(state);
+}
+
+export function lessonsDone() {
+  return Object.keys(state.lessons).length;
 }
 
 /* ── Daily challenge ─────────────────────────────── */

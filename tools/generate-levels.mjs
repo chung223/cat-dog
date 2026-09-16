@@ -99,6 +99,51 @@ for (const band of CURVE) {
   }
 }
 
+/**
+ * One lesson per technique: the smallest board that needs it, reaching for it
+ * as early as possible so the student runs into the point of the lesson right
+ * away rather than after ten routine moves.
+ */
+function findLesson(tier) {
+  const sizes = tier <= 2 ? [5, 6] : [6, 7];
+  let best = null;
+
+  for (const size of sizes) {
+    let seed = tier * 31_337 + size * 977;
+    for (let attempt = 0; attempt < 4000; attempt++) {
+      const puzzle = generatePuzzle(size, seed++);
+      const rating = rate(size, puzzle.regions);
+      if (!rating.solved || rating.tier !== tier) continue;
+
+      const score = rating.topAt * 10 + rating.effort;
+      if (!best || score < best.score) best = { puzzle, rating, size, score };
+      if (rating.topAt <= 2 && rating.effort <= (tier <= 2 ? 3 : 6)) break;
+    }
+    if (best && best.rating.topAt <= 2) break;
+  }
+
+  if (!best) throw new Error(`no lesson found for tier ${tier}`);
+  return best;
+}
+
+const lessons = [];
+for (let tier = 1; tier <= 5; tier++) {
+  const lesson = findLesson(tier);
+  lessons.push({
+    d: tier,
+    s: lesson.size,
+    r: lesson.puzzle.regions.join(''),
+    a: lesson.puzzle.solution.join(''),
+  });
+  console.log(
+    `lesson tier ${tier}: ${lesson.size}x${lesson.size}, technique appears at step ${lesson.rating.topAt} of ${lesson.rating.effort}`,
+  );
+}
+
+const lessonBody = lessons
+  .map((lesson) => `  { d: ${lesson.d}, s: ${lesson.s}, r: '${lesson.r}', a: '${lesson.a}' },`)
+  .join('\n');
+
 const body = levels
   .map((level) => `  { n: ${level.n}, s: ${level.s}, d: ${level.d}, r: '${level.r}', a: '${level.a}' },`)
   .join('\n');
@@ -117,14 +162,26 @@ ${body}
 ];
 
 export function loadLevel(number) {
-  const level = LEVELS.find((entry) => entry.n === number);
-  if (!level) return null;
+  return unpack(LEVELS.find((entry) => entry.n === number));
+}
+
+// One teaching board per technique, keyed by tier.
+export const LESSONS = [
+${lessonBody}
+];
+
+export function loadLesson(tier) {
+  return unpack(LESSONS.find((entry) => entry.d === tier));
+}
+
+function unpack(entry) {
+  if (!entry) return null;
   return {
-    number: level.n,
-    size: level.s,
-    tier: level.d,
-    regions: [...level.r].map(Number),
-    solution: [...level.a].map(Number),
+    number: entry.n,
+    size: entry.s,
+    tier: entry.d,
+    regions: [...entry.r].map(Number),
+    solution: [...entry.a].map(Number),
   };
 }
 `,

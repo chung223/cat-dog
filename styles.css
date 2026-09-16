@@ -581,3 +581,88 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: .02em; }
   0%, 100% { box-shadow: 0 0 0 0 #0000; }
   50% { box-shadow: 0 0 0 3px var(--accent); }
 }
+
+/* ── Endless-mode pickers ──────────────────────────── */
+.size-grid .btn, .tier-grid .btn { position: relative; }
+.size-grid .btn[aria-pressed="true"], .tier-grid .btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.tier-grid .btn { padding: 11px 4px; font-size: .78rem; display: grid; gap: 4px; justify-items: center; }
+.tier-grid .btn i { width: 8px; height: 8px; border-radius: 99px; }
+
+/* ── Busy veil ─────────────────────────────────────── */
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: #2a1d0f8c;
+  backdrop-filter: blur(2px);
+}
+
+.veil-card {
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 18px;
+  padding: 24px 30px;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  box-shadow: var(--shadow);
+  font-size: .88rem;
+  font-weight: 700;
+}
+
+.veil-card p { margin: 0; }
+
+.veil-spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 99px;
+  border: 3px solid var(--surface-2);
+  border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Lessons ───────────────────────────────────────── */
+.lesson-banner {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--tier, var(--accent));
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  margin-bottom: 12px;
+}
+
+.lesson-tag { font-size: .66rem; font-weight: 800; letter-spacing: .08em; color: var(--ink-soft); }
+.lesson-banner strong { display: block; font-size: 1rem; margin-top: 1px; }
+.lesson-banner p { margin: 5px 0 0; font-size: .8rem; line-height: 1.55; color: var(--ink-soft); }
+
+.lesson-list { display: grid; gap: 8px; margin-top: 4px; }
+
+.lesson-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 13px;
+  padding: 11px 13px;
+  cursor: pointer;
+}
+
+.lesson-row i { width: 10px; height: 10px; border-radius: 99px; flex: none; }
+.lesson-row b { font-size: .92rem; }
+.lesson-row small { display: block; color: var(--ink-soft); font-size: .74rem; margin-top: 1px; }
+.lesson-row .tick { margin-left: auto; color: var(--good); font-weight: 800; }
+.lesson-row.done { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }

@@ -1,6 +1,6 @@
 // Screens, input handling and rendering.
 
-import { LEVELS, loadLevel } from './levels.js';
+import { LEVELS, loadLevel, loadLesson } from './levels.js';
 import { generatePuzzle } from './puzzle.js';
 import { Game, EMPTY, MARK, SHIBA, AUTO } from './game.js';
 import { TECHNIQUES, findNext, rate, techniqueOf } from './analyze.js';
@@ -15,6 +15,13 @@ const MAX_MISTAKES = 3;
 
 // Board size of the daily puzzle, by weekday. Sunday gets the chunky one.
 const DAILY_SIZES = [9, 7, 8, 8, 9, 8, 9];
+
+// The level where each technique first becomes unavoidable.
+const FIRST_OF_TIER = new Map();
+for (const level of LEVELS) {
+  if (!FIRST_OF_TIER.has(level.d)) FIRST_OF_TIER.set(level.d, level.n);
+}
+const offered = new Set();
 
 const SIZE_LABELS = { 5: '入門', 6: '輕鬆', 7: '普通', 8: '偏難', 9: '困難', 10: '專家' };
 
@@ -116,8 +123,15 @@ function refreshHome() {
   const cleared = store.clearedCount();
   $('progress-text').textContent = `${cleared} / ${TOTAL_LEVELS}`;
   $('progress-fill').style.width = `${(cleared / TOTAL_LEVELS) * 100}%`;
-  $('btn-continue').textContent =
-    cleared === 0 ? '開始第 1 關' : `繼續第 ${store.highestUnlocked()} 關`;
+  const board = store.latestBoard();
+  // A daily board from an earlier date can no longer be reached.
+  const stale = board?.mode === 'daily' && board.key !== `daily:${store.dateKey()}`;
+  state.resumeTarget = board && !stale ? board : null;
+  $('btn-continue').textContent = state.resumeTarget
+    ? `接著玩 ${boardLabel(state.resumeTarget)}`
+    : cleared === 0
+      ? '開始第 1 關'
+      : `繼續第 ${store.highestUnlocked()} 關`;
 
   const today = new Date();
   const key = store.dateKey(today);
@@ -162,6 +176,76 @@ function buildLevelGrid() {
 
 /* ── Puzzle setup ────────────────────────────────── */
 
+/** One save slot per level, per day, plus a single endless slot. */
+function boardKey() {
+  if (state.mode === 'lesson') return `lesson:${state.levelNumber}`;
+  if (state.mode === 'campaign') return `campaign:${state.levelNumber}`;
+  if (state.mode === 'daily') return `daily:${state.dayKey}`;
+  return 'endless';
+}
+
+function persist() {
+  const { game } = state;
+  if (!game || state.finished || state.mode === 'lesson') return;
+  if (game.history.length === 0 && game.shibas().length === 0) return;
+
+  store.saveBoard(boardKey(), {
+    mode: state.mode,
+    levelNumber: state.levelNumber,
+    endlessSize: state.endlessSize,
+    cells: Array.from(game.cells),
+    seconds: state.seconds,
+    mistakes: state.mistakes,
+    hints: game.hintsUsed,
+    // Campaign and daily boards rebuild themselves from their number or date;
+    // an endless board is one of a kind, so it travels with its save.
+    puzzle:
+      state.mode === 'endless'
+        ? { size: game.size, regions: game.regions, solution: game.solution }
+        : undefined,
+  });
+}
+
+function boardLabel(board) {
+  if (board.mode === 'campaign') return `第 ${board.levelNumber} 關`;
+  if (board.mode === 'daily') return '每日挑戰';
+  return `無盡 ${board.endlessSize}×${board.endlessSize}`;
+}
+
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+function showVeil(text) {
+  $('veil-text').textContent = text;
+  $('veil').hidden = false;
+}
+
+const hideVeil = () => {
+  $('veil').hidden = true;
+};
+
+/**
+ * Generate until the puzzle lands on `tier`. Generation is synchronous and a
+ * 10x10 takes a quarter of a second, so we hand the frame back between tries;
+ * otherwise the busy overlay would never get a chance to draw.
+ */
+async function generateAtTier(size, tier, budgetMs = 8000) {
+  const deadline = Date.now() + budgetMs;
+  let closest = null;
+
+  while (Date.now() < deadline) {
+    await nextFrame();
+    const puzzle = generatePuzzle(size, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+    const rating = rate(size, puzzle.regions);
+    if (!rating.solved) continue;
+    if (rating.tier === tier) return puzzle;
+    if (!closest || Math.abs(rating.tier - tier) < Math.abs(closest.tier - tier)) {
+      closest = { puzzle, tier: rating.tier };
+    }
+  }
+
+  return closest?.puzzle ?? generatePuzzle(size, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+}
+
 function hashString(text) {
   let hash = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -175,6 +259,8 @@ function startPuzzle({
   mode = state.mode,
   levelNumber = state.levelNumber,
   endlessSize = state.endlessSize,
+  resume = false,
+  ready = null,
 } = {}) {
   state.mode = mode;
   state.levelNumber = levelNumber;
@@ -190,6 +276,13 @@ function startPuzzle({
     $('hud-level-label').textContent = '關卡';
     $('hud-level').textContent = String(levelNumber);
     $('btn-next-puzzle').hidden = true;
+  } else if (mode === 'lesson') {
+    puzzle = loadLesson(levelNumber);
+    tier = levelNumber;
+    $('topbar-title').textContent = `第 ${levelNumber} 課`;
+    $('hud-level-label').textContent = '課程';
+    $('hud-level').textContent = `${levelNumber} / 5`;
+    $('btn-next-puzzle').hidden = true;
   } else if (mode === 'daily') {
     const today = new Date();
     state.dayKey = store.dateKey(today);
@@ -200,7 +293,11 @@ function startPuzzle({
     $('hud-level').textContent = `${today.getMonth() + 1}/${today.getDate()}`;
     $('btn-next-puzzle').hidden = true;
   } else {
-    puzzle = generatePuzzle(endlessSize, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+    const saved = resume ? store.loadBoard('endless') : null;
+    puzzle =
+      ready ?? saved?.puzzle ?? generatePuzzle(endlessSize, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+    endlessSize = puzzle.size;
+    state.endlessSize = endlessSize;
     $('topbar-title').textContent = '無盡模式';
     $('hud-level-label').textContent = '盤面';
     $('hud-level').textContent = `${endlessSize}×${endlessSize}`;
@@ -212,18 +309,46 @@ function startPuzzle({
 
   const settings = store.getSettings();
   state.game = new Game({ ...puzzle, autoMark: settings.autoMark });
-  state.strict = settings.strict;
+  // A lesson is for learning, so no lives and the hints are on the house.
+  state.strict = settings.strict && mode !== 'lesson';
   state.mistakes = 0;
   state.finished = false;
   state.focusIndex = 0;
   state.tap = null;
 
+  const saved = store.loadBoard(boardKey());
+  const resumed = Boolean(saved && saved.cells?.length === state.game.cells.length);
+  if (resumed) {
+    state.game.cells = Int8Array.from(saved.cells);
+    state.game.hintsUsed = saved.hints ?? 0;
+    state.mistakes = saved.mistakes ?? 0;
+  }
+
+  showLessonBanner(mode === 'lesson' ? state.tier : null);
+  $('btn-hint').querySelector('span').textContent = mode === 'lesson' ? '教我下一步' : '提示';
+
   buildBoard();
   paintBoard();
   renderLives();
-  setHint(`本關難度：${techniqueOf(state.tier).name}`);
+  setHint(
+    resumed
+      ? '接著上次繼續。'
+      : mode === 'lesson'
+        ? '自己試試看，卡住就按「教我下一步」。'
+        : `本關難度：${techniqueOf(state.tier).name}`,
+  );
   $('hud-timer-wrap').hidden = !settings.showTimer;
-  startTimer();
+  startTimer(resumed ? (saved.seconds ?? 0) : 0);
+
+  // First level of a new technique? Offer the lesson before they hit the wall.
+  if (
+    mode === 'campaign' &&
+    FIRST_OF_TIER.get(state.tier) === levelNumber &&
+    !store.lessonDone(state.tier) &&
+    !offered.has(state.tier)
+  ) {
+    offerLesson(state.tier);
+  }
 }
 
 /* ── Board rendering ─────────────────────────────── */
@@ -316,6 +441,17 @@ function setHint(text, tone = '', source = 'ui') {
   line.dataset.source = text ? source : '';
 }
 
+function showLessonBanner(tier) {
+  const banner = $('lesson-banner');
+  banner.hidden = !tier;
+  if (!tier) return;
+  const technique = techniqueOf(tier);
+  banner.style.setProperty('--tier', `var(--t${tier})`);
+  $('lesson-tag').textContent = `第 ${tier} 課 · 這張盤面非用這招不可`;
+  $('lesson-name').textContent = technique.name;
+  $('lesson-hint').textContent = technique.hint;
+}
+
 function focusCells(indices) {
   for (const index of indices) state.cellNodes[index]?.classList.add('focus');
 }
@@ -337,9 +473,9 @@ function renderLives() {
 
 /* ── Timer ───────────────────────────────────────── */
 
-function startTimer() {
-  state.seconds = 0;
-  $('hud-timer').textContent = '0:00';
+function startTimer(from = 0) {
+  state.seconds = from;
+  $('hud-timer').textContent = formatTime(from);
   resumeTimer();
 }
 
@@ -533,11 +669,13 @@ board.addEventListener('keydown', (event) => {
 function afterChange() {
   paintBoard();
   if (!state.finished && state.game.isSolved()) win();
+  persist();
 }
 
 function win() {
   state.finished = true;
   stopTimer();
+  store.clearBoard(boardKey());
   const { game } = state;
   const clean = game.hintsUsed === 0 && state.mistakes === 0;
 
@@ -545,6 +683,8 @@ function win() {
     store.recordClear(state.levelNumber, state.seconds, clean);
   } else if (state.mode === 'daily') {
     store.recordDaily(state.dayKey, state.seconds, state.mistakes);
+  } else if (state.mode === 'lesson') {
+    store.markLessonDone(state.levelNumber);
   }
 
   $('board-flash').classList.remove('on');
@@ -573,9 +713,19 @@ function win() {
     if (state.mode === 'daily') html += `<br>連續 ${store.dailyStreak()} 天 🔥`;
     $('win-stats').innerHTML = html;
 
+    $('btn-win-share').hidden = state.mode !== 'daily';
+    $('btn-win-share').textContent = '分享成績';
+
+    if (state.mode === 'lesson') {
+      $('win-title').textContent = `學會「${techniqueOf(state.levelNumber).name}」了`;
+      $('win-stats').innerHTML = `用時 <b>${formatTime(state.seconds)}</b>`;
+    }
+
     const isLast = state.mode === 'campaign' && state.levelNumber >= TOTAL_LEVELS;
-    $('btn-win-next').textContent = state.mode === 'campaign' ? '下一關' : '再來一題';
-    $('btn-win-next').hidden = isLast || state.mode === 'daily';
+    const lastLesson = state.mode === 'lesson' && state.levelNumber >= 5;
+    $('btn-win-next').textContent =
+      state.mode === 'campaign' ? '下一關' : state.mode === 'lesson' ? '下一課' : '再來一題';
+    $('btn-win-next').hidden = isLast || lastLesson || state.mode === 'daily';
     $('btn-win-levels').hidden = state.mode !== 'campaign';
     $('dlg-win').showModal();
   }, 620);
@@ -584,6 +734,7 @@ function win() {
 function lose() {
   state.finished = true;
   stopTimer();
+  store.clearBoard(boardKey());
   setHint('三次機會都用完了。', 'warn');
 
   setTimeout(() => {
@@ -598,12 +749,31 @@ function lose() {
 
 $('btn-back').addEventListener('click', () => history.back());
 
-$('btn-continue').addEventListener('click', () =>
-  navigate('game', { mode: 'campaign', levelNumber: store.highestUnlocked() }),
-);
+$('btn-continue').addEventListener('click', () => {
+  const board = state.resumeTarget;
+  if (board) {
+    navigate('game', {
+      mode: board.mode,
+      levelNumber: board.levelNumber,
+      endlessSize: board.endlessSize,
+      resume: true,
+    });
+    return;
+  }
+  navigate('game', { mode: 'campaign', levelNumber: store.highestUnlocked() });
+});
+
+addEventListener('pagehide', persist);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') persist();
+});
 $('btn-daily').addEventListener('click', () => navigate('game', { mode: 'daily' }));
 $('btn-levels').addEventListener('click', () => navigate('levels'));
-$('btn-endless').addEventListener('click', () => $('dlg-endless').showModal());
+$('btn-endless').addEventListener('click', () => {
+  paintPicker($('size-grid'), endless.size, 'size');
+  paintPicker($('tier-grid'), endless.tier, 'tier');
+  $('dlg-endless').showModal();
+});
 $('btn-rules').addEventListener('click', () => $('dlg-help').showModal());
 $('btn-help').addEventListener('click', () => $('dlg-help').showModal());
 
@@ -624,8 +794,17 @@ $('btn-hint').addEventListener('click', () => {
   const { game } = state;
   clearFocus();
 
-  // Work out the next move the way a player would, from what is on the board.
-  const step = findNext(game.size, game.regions, game.shibas());
+  // Feed the crosses back in so each hint moves on instead of repeating
+  // itself. A cross sitting on a solved square is the player's mistake, so it
+  // is left out — the hint will ask them to place there and expose it.
+  const correct = new Set(game.solution.map((col, row) => row * game.size + col));
+  const crossed = [];
+  for (let i = 0; i < game.cells.length; i++) {
+    const value = game.cells[i];
+    if ((value === MARK || value === AUTO) && !correct.has(i)) crossed.push(i);
+  }
+
+  const step = findNext(game.size, game.regions, game.shibas(), crossed);
 
   if (step.type === 'wrong') {
     game.snapshot();
@@ -635,6 +814,7 @@ $('btn-hint').addEventListener('click', () => {
     paintBoard();
     setHint(`這${mascot.unit}放錯了，先幫你收回來。`, 'warn');
     focusCells([step.index]);
+    persist();
     return;
   }
 
@@ -650,6 +830,7 @@ $('btn-hint').addEventListener('click', () => {
     setHint(`用「${step.technique.name}」：${step.because}`, 'good');
     focusCells(step.focus ?? []);
     if (game.isSolved()) win();
+    else persist();
     return;
   }
 
@@ -673,8 +854,40 @@ $('btn-win-next').addEventListener('click', () => {
   $('dlg-win').close();
   if (state.mode === 'campaign') {
     navigate('game', { mode: 'campaign', levelNumber: state.levelNumber + 1, replace: true });
+  } else if (state.mode === 'lesson') {
+    navigate('game', { mode: 'lesson', levelNumber: state.levelNumber + 1, replace: true });
   } else {
     startPuzzle({ mode: 'endless', endlessSize: state.endlessSize });
+  }
+});
+
+/** A spoiler-free scoreline: how it went, never where the pieces went. */
+function shareText() {
+  const [, month, day] = state.dayKey.split('-');
+  const hearts =
+    '❤️'.repeat(MAX_MISTAKES - state.mistakes) + '🖤'.repeat(state.mistakes);
+  const lines = [
+    `${mascot.name}謎陣・每日挑戰 ${Number(month)}/${Number(day)}`,
+    `${state.game.size}×${state.game.size}　難度 ${techniqueOf(state.tier).name}`,
+    `⏱ ${formatTime(state.seconds)}　${hearts}　💡 ${state.game.hintsUsed}`,
+  ];
+  const streak = store.dailyStreak();
+  if (streak > 1) lines.push(`🔥 連續 ${streak} 天`);
+  lines.push(location.origin + location.pathname.replace(/index\.html$/, ''));
+  return lines.join('\n');
+}
+
+$('btn-win-share').addEventListener('click', async () => {
+  const text = shareText();
+  try {
+    if (navigator.share) {
+      await navigator.share({ text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    $('btn-win-share').textContent = '已複製到剪貼簿 ✓';
+  } catch {
+    // Cancelling the share sheet lands here too, so stay quiet about it.
   }
 });
 
@@ -710,18 +923,95 @@ $('btn-fail-back').addEventListener('click', () => {
   history.back();
 });
 
-// Endless-mode size picker
+// Lessons
+function buildLessonList() {
+  const list = $('lesson-list');
+  list.textContent = '';
+
+  for (const technique of TECHNIQUES) {
+    const done = store.lessonDone(technique.tier);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = done ? 'lesson-row done' : 'lesson-row';
+    row.innerHTML =
+      `<i style="background: var(--t${technique.tier})"></i>` +
+      `<span><b>第 ${technique.tier} 課 · ${technique.name}</b><small>${technique.hint}</small></span>` +
+      (done ? '<span class="tick">✓</span>' : '');
+    row.addEventListener('click', () => {
+      $('dlg-lessons').close();
+      navigate('game', { mode: 'lesson', levelNumber: technique.tier });
+    });
+    list.append(row);
+  }
+}
+
+function offerLesson(tier) {
+  const technique = techniqueOf(tier);
+  offered.add(tier);
+  $('offer-title').textContent = `新技巧：${technique.name}`;
+  $('offer-text').textContent = `從這一關開始，光靠前面的招數解不完了，非用「${technique.name}」不可。要先花一分鐘上一課嗎？`;
+  $('dlg-offer').dataset.tier = String(tier);
+  $('dlg-offer').showModal();
+}
+
+$('btn-lessons').addEventListener('click', () => {
+  buildLessonList();
+  $('dlg-lessons').showModal();
+});
+
+$('btn-offer-learn').addEventListener('click', () => {
+  const tier = Number($('dlg-offer').dataset.tier);
+  $('dlg-offer').close();
+  navigate('game', { mode: 'lesson', levelNumber: tier, replace: true });
+});
+
+$('btn-offer-skip').addEventListener('click', () => $('dlg-offer').close());
+
+// Endless-mode pickers
+const endless = { size: 7, tier: 0 };
+
+function paintPicker(container, value, key) {
+  for (const button of container.children) {
+    button.setAttribute('aria-pressed', String(Number(button.dataset[key]) === value));
+  }
+}
+
 for (let size = 5; size <= 10; size++) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn';
+  button.dataset.size = String(size);
   button.innerHTML = `${size}×${size}<small>${SIZE_LABELS[size]}</small>`;
   button.addEventListener('click', () => {
-    $('dlg-endless').close();
-    navigate('game', { mode: 'endless', endlessSize: size });
+    endless.size = size;
+    paintPicker($('size-grid'), size, 'size');
   });
   $('size-grid').append(button);
 }
+
+for (const option of [{ tier: 0, name: '隨機', color: 'var(--ink-soft)' }, ...TECHNIQUES.map((t) => ({ tier: t.tier, name: t.name, color: `var(--t${t.tier})` }))]) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.dataset.tier = String(option.tier);
+  button.innerHTML = `<i style="background: ${option.color}"></i>${option.name}`;
+  button.addEventListener('click', () => {
+    endless.tier = option.tier;
+    paintPicker($('tier-grid'), option.tier, 'tier');
+  });
+  $('tier-grid').append(button);
+}
+
+$('btn-endless-go').addEventListener('click', async () => {
+  if (endless.tier === 0) {
+    navigate('game', { mode: 'endless', endlessSize: endless.size });
+    return;
+  }
+  showVeil(`在找一題「${techniqueOf(endless.tier).name}」…`);
+  const puzzle = await generateAtTier(endless.size, endless.tier);
+  hideVeil();
+  navigate('game', { mode: 'endless', endlessSize: endless.size, ready: puzzle });
+});
 
 // Difficulty legend and the technique rundown in the help sheet
 for (const technique of TECHNIQUES) {

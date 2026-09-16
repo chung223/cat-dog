@@ -2,7 +2,7 @@
 //
 //   node tools/verify-levels.mjs
 
-import { LEVELS, loadLevel } from '../src/levels.js';
+import { LEVELS, LESSONS, loadLevel, loadLesson } from '../src/levels.js';
 import { countSolutions, solve, generatePuzzle } from '../src/puzzle.js';
 import { rate, techniqueOf } from '../src/analyze.js';
 
@@ -92,6 +92,20 @@ for (const entry of LEVELS) {
   spread.set(key, (spread.get(key) ?? 0) + 1);
 }
 
+check('one lesson per technique', LESSONS.length === 5);
+for (let tier = 1; tier <= 5; tier++) {
+  const lesson = loadLesson(tier);
+  check(`lesson ${tier}: exists`, Boolean(lesson));
+  if (!lesson) continue;
+
+  validate(`lesson ${tier}`, lesson.size, lesson.regions, lesson.solution);
+  const rating = rate(lesson.size, lesson.regions);
+  check(`lesson ${tier}: needs exactly tier ${tier} (got ${rating.tier})`, rating.tier === tier);
+  // A lesson that spends ten moves on easy stuff first teaches nothing.
+  check(`lesson ${tier}: technique shows up early (step ${rating.topAt})`, rating.topAt <= 4);
+  check(`lesson ${tier}: stays short (${rating.effort} steps)`, rating.effort <= 8);
+}
+
 for (const size of [5, 6, 7, 8, 9, 10]) {
   for (let i = 0; i < 5; i++) {
     const puzzle = generatePuzzle(size, 424242 + size * 1000 + i);
@@ -103,5 +117,5 @@ if (failures > 0) {
   console.error(`\n${failures} check(s) failed`);
   process.exit(1);
 }
-console.log(`all checks passed (${LEVELS.length} levels + 30 endless puzzles)`);
+console.log(`all checks passed (${LEVELS.length} levels + ${LESSONS.length} lessons + 30 endless puzzles)`);
 for (const [key, count] of spread) console.log(`  ${key}: ${count} levels`);
