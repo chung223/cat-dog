@@ -666,3 +666,47 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: .02em; }
 .lesson-row small { display: block; color: var(--ink-soft); font-size: .74rem; margin-top: 1px; }
 .lesson-row .tick { margin-left: auto; color: var(--good); font-weight: 800; }
 .lesson-row.done { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+
+/* ── Leaderboard ───────────────────────────────────── */
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 14px;
+  font-size: .88rem;
+  font-weight: 700;
+}
+
+.name-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  padding: 9px 12px;
+}
+
+.name-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.board-list { display: grid; gap: 5px; }
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border-radius: 11px;
+  padding: 9px 12px;
+  font-size: .85rem;
+}
+
+.board-row .rank { width: 1.8em; font-weight: 800; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.board-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.board-row .when { color: var(--ink-soft); font-size: .78rem; }
+.board-row .time { font-weight: 800; font-variant-numeric: tabular-nums; }
+.board-row .tags { font-size: .72rem; letter-spacing: .05em; }
+.board-row.mine { background: color-mix(in srgb, var(--accent) 17%, var(--surface)); }
+.board-empty { color: var(--ink-soft); font-size: .82rem; padding: 6px 2px; }

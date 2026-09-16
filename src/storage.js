@@ -10,6 +10,7 @@ const DEFAULTS = {
     showTimer: true,
     strict: true, // three mistakes and the puzzle is over
     mascot: 'poop',
+    name: '',
   },
   daily: {}, // 'YYYY-MM-DD' -> { seconds, mistakes }
   boards: {}, // 'campaign:40' | 'daily:2026-09-16' | 'endless' -> board in progress
@@ -125,6 +126,26 @@ export function latestBoard() {
   if (entries.length === 0) return null;
   const [key, board] = entries.sort((a, b) => b[1].at - a[1].at)[0];
   return { key, ...board };
+}
+
+/* ── Leaderboard submissions ─────────────────────── */
+
+export function hasSubmitted(day) {
+  return Boolean(state.daily[day]?.sent);
+}
+
+export function markSubmitted(day) {
+  if (!state.daily[day]) return;
+  state.daily[day].sent = true;
+  write(state);
+}
+
+/** Your own daily results, newest first — the local fallback board. */
+export function dailyHistory(limit = 30) {
+  return Object.entries(state.daily)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, limit)
+    .map(([day, record]) => ({ day, ...record }));
 }
 
 /* ── Tutorial lessons ────────────────────────────── */

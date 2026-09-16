@@ -32,6 +32,8 @@
 - **每日挑戰** — 每天一題，題目由日期決定，所以同一天打開的人拿到同一張盤面（不需要伺服器）。有連續天數紀錄，過關後可以分享成績（不會劇透答案）
 - **無盡模式** — 自選盤面大小（5×5 ～ 10×10）**和難度**，即時出題，永遠不重複
 
+- **排行榜** — 每日挑戰的成績榜。預設是本機版（只有自己的紀錄），接上後端就變成共用的，見下
+
 盤面中途離開會存著，回首頁按「接著玩」就繼續，關掉瀏覽器也還在。
 
 ## 關於原創性
@@ -40,7 +42,7 @@
 
 因此這裡的每一行程式碼、CSS、SVG 插圖都是為本專案重新寫、重新畫的，沒有複製任何既有網站的原始碼或素材。如果你要繼續改，請維持同樣做法：可以參考別人的規則和 UX 想法，不要複製檔案。
 
-排行榜沒有做，那需要後端與帳號系統，超出「一個靜態網頁」的範圍。
+排行榜的程式碼是自己寫的，後端用 Supabase（設定方式見下）。
 
 ## 本地執行
 
@@ -68,6 +70,61 @@ python3 -m http.server 8000   # 或 npx serve .
 
 網址會是 `https://chung223.github.io/cat-dog/`。
 
+## 排行榜
+
+**先講清楚：這種排行榜擋不住作弊。** 整個遊戲跑在瀏覽器裡，上傳的秒數就是前端說了算，沒有任何東西能證明那一局真的發生過。要能驗證就得把每一步都送到伺服器重算，那是另一個量級的工程。所以這裡的定位是「一群人一起玩的記分板」，不是競技排名——UI 上也是這樣寫的。
+
+沒設定後端時，排行榜自動變成**本機版**：只列出你自己每天的成績。這個不用設定就能用。
+
+### 開共用排行榜（約五分鐘）
+
+1. 開一個免費的 [Supabase](https://supabase.com) 專案。
+2. 到 SQL Editor 執行：
+
+```sql
+create table public.scores (
+  id         bigint generated always as identity primary key,
+  day        text        not null,
+  name       text        not null,
+  seconds    integer     not null,
+  mistakes   integer     not null,
+  hints      integer     not null,
+  size       integer     not null,
+  created_at timestamptz not null default now()
+);
+
+create index scores_day_seconds_idx on public.scores (day, seconds);
+
+alter table public.scores enable row level security;
+
+create policy "anyone can read" on public.scores
+  for select using (true);
+
+create policy "anyone can post today" on public.scores
+  for insert with check (
+    char_length(name) between 1 and 16
+    and seconds  between 1 and 86400
+    and mistakes between 0 and 3
+    and hints    between 0 and 200
+    and size     between 5 and 10
+    -- 前後各留一天，免得時區不同的人被擋掉
+    and day between to_char((now() - interval '1 day')::date, 'YYYY-MM-DD')
+                and to_char((now() + interval '1 day')::date, 'YYYY-MM-DD')
+  );
+```
+
+沒有寫 update / delete 的政策，所以沒有人改得掉或刪得掉別人的紀錄。
+
+3. 把 Project URL 和 anon key 填進 `src/config.js`，推上去就生效。
+
+**anon key 是可以公開的**，本來就設計成放在前端；擋住濫用的是上面那段 RLS 政策，不是把 key 藏起來。
+
+想先試不想改檔案的話，在瀏覽器 console 跑：
+
+```js
+localStorage.setItem('shiba-grid/leaderboard', JSON.stringify({ url: 'https://xxx.supabase.co', anonKey: '...' }))
+```
+
 ## 專案結構
 
 ```
@@ -78,7 +135,10 @@ src/puzzle.js           出題與求解演算法
 src/levels.js           預先產好的 100 關（由 tools 產生，勿手改）
 src/game.js             盤面狀態與規則判定
 src/mascots.js          八種主角的 SVG 插圖
-src/storage.js          進度、每日紀錄與設定（localStorage）
+src/storage.js          進度、每日紀錄、暫存盤面與設定（localStorage）
+src/analyze.js          人類技巧解題器（難度評級＋提示）
+src/config.js           排行榜後端設定（留空＝本機版）
+src/leaderboard.js      排行榜的讀寫
 src/main.js             畫面、輸入處理
 tools/generate-levels.mjs   重新產生 src/levels.js
 tools/verify-levels.mjs     驗證每一關都只有唯一解

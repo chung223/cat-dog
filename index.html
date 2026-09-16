@@ -63,6 +63,7 @@
         <button class="btn" id="btn-levels" type="button">選擇關卡</button>
         <button class="btn" id="btn-endless" type="button">無盡模式</button>
         <button class="btn" id="btn-lessons" type="button">玩法教學</button>
+        <button class="btn" id="btn-board" type="button">排行榜</button>
         <button class="btn btn-quiet" id="btn-rules" type="button">玩法說明</button>
       </div>
     </section>
@@ -163,6 +164,23 @@
   <form method="dialog"><button class="btn btn-primary" value="close">完成</button></form>
 </dialog>
 
+<dialog class="sheet" id="dlg-board">
+  <h2>每日排行榜</h2>
+  <p class="sheet-note" id="board-note"></p>
+
+  <label class="name-row">
+    <span>你的暱稱</span>
+    <input type="text" id="opt-name" maxlength="16" placeholder="路人甲" autocomplete="off">
+  </label>
+
+  <div class="board-list" id="board-list"></div>
+
+  <h3>我的每日紀錄</h3>
+  <div class="board-list" id="board-history"></div>
+
+  <form method="dialog"><button class="btn btn-quiet" value="close">關閉</button></form>
+</dialog>
+
 <dialog class="sheet" id="dlg-lessons">
   <h2>玩法教學</h2>
   <p class="sheet-note">五種推理，一課一種。每課都是一張小盤面，剛好非用那一招不可。</p>
@@ -197,6 +215,7 @@
   <div class="win-actions">
     <button class="btn btn-primary" id="btn-win-next" type="button">下一關</button>
     <button class="btn" id="btn-win-share" type="button" hidden>分享成績</button>
+    <button class="btn" id="btn-win-board" type="button" hidden>上傳到排行榜</button>
     <button class="btn" id="btn-win-replay" type="button">再玩一次</button>
     <button class="btn btn-quiet" id="btn-win-levels" type="button">回關卡列表</button>
   </div>

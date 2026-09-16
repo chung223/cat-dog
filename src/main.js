@@ -6,6 +6,7 @@ import { Game, EMPTY, MARK, SHIBA, AUTO } from './game.js';
 import { TECHNIQUES, findNext, rate, techniqueOf } from './analyze.js';
 import { MASCOTS, getMascot } from './mascots.js';
 import * as store from './storage.js';
+import { fetchTop, submitScore, leaderboardEnabled } from './leaderboard.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -716,6 +717,12 @@ function win() {
     $('btn-win-share').hidden = state.mode !== 'daily';
     $('btn-win-share').textContent = '分享成績';
 
+    const canUpload =
+      state.mode === 'daily' && leaderboardEnabled() && !store.hasSubmitted(state.dayKey);
+    $('btn-win-board').hidden = !canUpload;
+    $('btn-win-board').disabled = false;
+    $('btn-win-board').textContent = '上傳到排行榜';
+
     if (state.mode === 'lesson') {
       $('win-title').textContent = `學會「${techniqueOf(state.levelNumber).name}」了`;
       $('win-stats').innerHTML = `用時 <b>${formatTime(state.seconds)}</b>`;
@@ -921,6 +928,123 @@ $('btn-fail-relax').addEventListener('click', () => {
 $('btn-fail-back').addEventListener('click', () => {
   $('dlg-fail').close();
   history.back();
+});
+
+// Leaderboard
+function boardRow({ rank, who, when, seconds, mistakes, hints, mine }) {
+  const row = document.createElement('div');
+  row.className = mine ? 'board-row mine' : 'board-row';
+  const clean = mistakes === 0 && hints === 0;
+  row.innerHTML =
+    (rank ? `<span class="rank">${rank}</span>` : '') +
+    `<span class="who">${who}</span>` +
+    (when ? `<span class="when">${when}</span>` : '') +
+    `<span class="time">${formatTime(seconds)}</span>` +
+    `<span class="tags">${clean ? '⭐' : `${'🖤'.repeat(mistakes)}${hints > 0 ? `💡${hints}` : ''}`}</span>`;
+  return row;
+}
+
+function renderHistory() {
+  const list = $('board-history');
+  list.textContent = '';
+  const history = store.dailyHistory();
+
+  if (history.length === 0) {
+    list.innerHTML = '<p class="board-empty">還沒有完成過每日挑戰。</p>';
+    return;
+  }
+  for (const entry of history) {
+    const [, month, day] = entry.day.split('-');
+    list.append(
+      boardRow({
+        who: `${Number(month)} 月 ${Number(day)} 日`,
+        seconds: entry.seconds,
+        mistakes: entry.mistakes ?? 0,
+        hints: 0,
+      }),
+    );
+  }
+}
+
+async function renderBoard() {
+  const list = $('board-list');
+  const note = $('board-note');
+  const today = store.dateKey();
+  renderHistory();
+
+  if (!leaderboardEnabled()) {
+    note.textContent = '目前是本機排行榜：只有這台裝置上的紀錄。要開共用排行榜的話，README 有五分鐘的設定步驟。';
+    list.textContent = '';
+    return;
+  }
+
+  note.textContent = '每日挑戰完成後可以上傳。成績是瀏覽器自己報的，純屬同樂。';
+  list.innerHTML = '<p class="board-empty">讀取中…</p>';
+
+  try {
+    const rows = await fetchTop(today);
+    list.textContent = '';
+    if (rows.length === 0) {
+      list.innerHTML = '<p class="board-empty">今天還沒有人上傳。</p>';
+      return;
+    }
+    const me = store.getSettings().name;
+    rows.forEach((row, index) => {
+      list.append(
+        boardRow({
+          rank: index + 1,
+          who: row.name,
+          seconds: row.seconds,
+          mistakes: row.mistakes,
+          hints: row.hints,
+          mine: Boolean(me) && row.name === me,
+        }),
+      );
+    });
+  } catch {
+    list.innerHTML = '<p class="board-empty">連不上排行榜，等一下再試。</p>';
+  }
+}
+
+function openBoard() {
+  $('opt-name').value = store.getSettings().name;
+  $('dlg-board').showModal();
+  renderBoard();
+}
+
+$('btn-board').addEventListener('click', openBoard);
+
+$('opt-name').addEventListener('change', (event) => {
+  store.setSetting('name', event.target.value.trim().slice(0, 16));
+});
+
+$('btn-win-board').addEventListener('click', async () => {
+  const button = $('btn-win-board');
+  const name = store.getSettings().name.trim();
+  if (!name) {
+    $('dlg-win').close();
+    openBoard();
+    $('opt-name').focus();
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = '上傳中…';
+  try {
+    await submitScore({
+      day: state.dayKey,
+      name,
+      seconds: state.seconds,
+      mistakes: state.mistakes,
+      hints: state.game.hintsUsed,
+      size: state.game.size,
+    });
+    store.markSubmitted(state.dayKey);
+    button.textContent = '已上傳 ✓';
+  } catch {
+    button.textContent = '上傳失敗，再試一次';
+    button.disabled = false;
+  }
 });
 
 // Lessons
