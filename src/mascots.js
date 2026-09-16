@@ -115,16 +115,21 @@ export const MASCOTS = [
     unit: '個',
     accent: '#5b8fb0',
     svg: `<svg class="mascot" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <rect x="14" y="7" width="36" height="20" rx="4" fill="#f2f6f8" stroke="#c3d2da" stroke-width="2"/>
-      <circle cx="32" cy="11.5" r="2.6" fill="#b6c7d1"/>
-      <path d="M11 28h42v6q0 13-11 17H22q-11-4-11-17z" fill="#fafcfd" stroke="#c3d2da" stroke-width="2"/>
-      <ellipse cx="32" cy="35" rx="16" ry="8" fill="#e6eef2"/>
-      <ellipse cx="32" cy="35.5" rx="10" ry="4.6" fill="#a9c6d6"/>
-      <path d="M24 51h16l2 6H22z" fill="#e6eef2" stroke="#c3d2da" stroke-width="2"/>
-      <ellipse cx="25" cy="19" rx="2.7" ry="3.2" fill="#33241a"/>
-      <ellipse cx="39" cy="19" rx="2.7" ry="3.2" fill="#33241a"/>
-      <circle cx="26" cy="17.8" r=".9" fill="#fff"/><circle cx="40" cy="17.8" r=".9" fill="#fff"/>
-      <path d="M28 23.5q4 3.5 8 0" stroke="#33241a" stroke-width="1.9" fill="none" stroke-linecap="round"/>
+      <rect x="15" y="3" width="34" height="16" rx="4" fill="#f2f6f8" stroke="#c3d2da" stroke-width="2"/>
+      <circle cx="42.5" cy="7.5" r="2.3" fill="#b6c7d1"/>
+      <path d="M11 21h42v6q0 13-11 17H22q-11-4-11-17z" fill="#fafcfd" stroke="#c3d2da" stroke-width="2"/>
+      <ellipse cx="32" cy="29" rx="17.5" ry="8.5" fill="#e6eef2"/>
+      <ellipse cx="32" cy="30" rx="11.5" ry="5" fill="#a9c6d6"/>
+      <path d="M24 46h16l2 7H22z" fill="#e6eef2" stroke="#c3d2da" stroke-width="2"/>
+      <ellipse cx="32" cy="16.5" rx="3.6" ry="3" fill="#a5713f"/>
+      <ellipse cx="32" cy="21.5" rx="6.6" ry="4.6" fill="#99673e"/>
+      <ellipse cx="32" cy="28.5" rx="9.6" ry="5.6" fill="#8b5c37"/>
+      <ellipse cx="32" cy="36" rx="12.2" ry="6.6" fill="#7d5130"/>
+      <ellipse cx="27.6" cy="27.6" rx="3" ry="3.5" fill="#fff"/>
+      <ellipse cx="36.4" cy="27.6" rx="3" ry="3.5" fill="#fff"/>
+      <circle cx="28.1" cy="28.1" r="1.6" fill="#2b1f15"/>
+      <circle cx="36.9" cy="28.1" r="1.6" fill="#2b1f15"/>
+      <path d="M27 34q5 4.2 10 0" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
     </svg>`,
   },
   {
