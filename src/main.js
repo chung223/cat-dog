@@ -2,7 +2,8 @@
 
 import { LEVELS, loadLevel } from './levels.js';
 import { generatePuzzle } from './puzzle.js';
-import { Game, EMPTY, MARK, SHIBA } from './game.js';
+import { Game, EMPTY, MARK, SHIBA, AUTO } from './game.js';
+import { TECHNIQUES, findNext, rate, techniqueOf } from './analyze.js';
 import { MASCOTS, getMascot } from './mascots.js';
 import * as store from './storage.js';
 
@@ -31,6 +32,7 @@ const state = {
   tap: null,
   pointer: null,
   strict: true,
+  tier: 1,
   mistakes: 0,
   finished: false,
 };
@@ -139,13 +141,15 @@ function buildLevelGrid() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = record ? 'level-cell done' : 'level-cell';
+    button.style.setProperty('--tier', `var(--t${level.d})`);
     button.innerHTML =
       `<span>${level.n}</span>` +
       `<span class="size">${level.s}×${level.s}</span>` +
       (record?.clean ? '<span class="star">⭐</span>' : record ? '<span class="star">✓</span>' : '');
     button.setAttribute(
       'aria-label',
-      `第 ${level.n} 關，${level.s} 乘 ${level.s}${record ? `，已完成，最佳 ${formatTime(record.best)}` : ''}`,
+      `第 ${level.n} 關，${level.s} 乘 ${level.s}，難度 ${techniqueOf(level.d).name}` +
+        (record ? `，已完成，最佳 ${formatTime(record.best)}` : ''),
     );
     button.addEventListener('click', () =>
       navigate('game', { mode: 'campaign', levelNumber: level.n }),
@@ -177,8 +181,10 @@ function startPuzzle({
   state.endlessSize = endlessSize;
 
   let puzzle;
+  let tier;
   if (mode === 'campaign') {
     puzzle = loadLevel(levelNumber);
+    tier = puzzle.tier;
     store.setLastLevel(levelNumber);
     $('topbar-title').textContent = `第 ${levelNumber} 關`;
     $('hud-level-label').textContent = '關卡';
@@ -201,6 +207,9 @@ function startPuzzle({
     $('btn-next-puzzle').hidden = false;
   }
 
+  // Daily and endless boards are fresh, so their difficulty is measured here.
+  state.tier = tier ?? rate(puzzle.size, puzzle.regions).tier ?? 5;
+
   const settings = store.getSettings();
   state.game = new Game({ ...puzzle, autoMark: settings.autoMark });
   state.strict = settings.strict;
@@ -212,7 +221,7 @@ function startPuzzle({
   buildBoard();
   paintBoard();
   renderLives();
-  setHint('');
+  setHint(`本關難度：${techniqueOf(state.tier).name}`);
   $('hud-timer-wrap').hidden = !settings.showTimer;
   startTimer();
 }
@@ -307,6 +316,14 @@ function setHint(text, tone = '', source = 'ui') {
   line.dataset.source = text ? source : '';
 }
 
+function focusCells(indices) {
+  for (const index of indices) state.cellNodes[index]?.classList.add('focus');
+}
+
+function clearFocus() {
+  for (const cell of state.cellNodes) cell.classList.remove('focus');
+}
+
 function renderLives() {
   const lives = $('lives');
   lives.hidden = !state.strict;
@@ -361,6 +378,7 @@ board.addEventListener('pointerdown', (event) => {
   const cell = event.target.closest('.cell');
   if (!cell) return;
   event.preventDefault();
+  clearFocus();
   cell.focus({ preventScroll: true });
   setFocusIndex(Number(cell.dataset.index));
   board.setPointerCapture(event.pointerId);
@@ -603,18 +621,48 @@ $('btn-clear').addEventListener('click', () => {
 
 $('btn-hint').addEventListener('click', () => {
   if (state.finished) return;
-  const result = state.game.hint();
-  paintBoard();
-  if (result.type === 'wrong') {
+  const { game } = state;
+  clearFocus();
+
+  // Work out the next move the way a player would, from what is on the board.
+  const step = findNext(game.size, game.regions, game.shibas());
+
+  if (step.type === 'wrong') {
+    game.snapshot();
+    game.cells[step.index] = EMPTY;
+    game.refreshAuto();
+    game.hintsUsed++;
+    paintBoard();
     setHint(`這${mascot.unit}放錯了，先幫你收回來。`, 'warn');
-  } else if (result.type === 'reveal') {
-    setHint('這個位置是確定的。', 'good');
-    const cell = state.cellNodes[result.index];
-    cell.classList.remove('nudge');
-    void cell.offsetWidth;
-    cell.classList.add('nudge');
+    focusCells([step.index]);
+    return;
   }
-  if (state.game.isSolved()) win();
+
+  if (step.type === 'move') {
+    game.snapshot();
+    if (step.place !== undefined) game.cells[step.place] = SHIBA;
+    for (const index of step.exclude ?? []) {
+      if (game.cells[index] === EMPTY || game.cells[index] === AUTO) game.cells[index] = MARK;
+    }
+    game.refreshAuto();
+    game.hintsUsed++;
+    paintBoard();
+    setHint(`用「${step.technique.name}」：${step.because}`, 'good');
+    focusCells(step.focus ?? []);
+    if (game.isSolved()) win();
+    return;
+  }
+
+  // Nothing logical left to say: just hand over one correct square.
+  const result = game.hint();
+  paintBoard();
+  if (result.type === 'reveal') {
+    setHint('這個位置是確定的。', 'good');
+    focusCells([result.index]);
+  } else {
+    setHint('已經沒有東西可以推了。');
+  }
+  if (game.isSolved()) win();
 });
 
 $('btn-next-puzzle').addEventListener('click', () =>
@@ -673,6 +721,20 @@ for (let size = 5; size <= 10; size++) {
     navigate('game', { mode: 'endless', endlessSize: size });
   });
   $('size-grid').append(button);
+}
+
+// Difficulty legend and the technique rundown in the help sheet
+for (const technique of TECHNIQUES) {
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.innerHTML = `<i style="background: var(--t${technique.tier})"></i>${technique.name}`;
+  $('legend').append(chip);
+
+  const item = document.createElement('li');
+  item.innerHTML =
+    `<b><i style="background: var(--t${technique.tier})"></i>${technique.name}</b>` +
+    `<small>${technique.hint}</small>`;
+  $('technique-list').append(item);
 }
 
 // Mascot picker

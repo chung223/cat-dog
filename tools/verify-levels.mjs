@@ -4,6 +4,7 @@
 
 import { LEVELS, loadLevel } from '../src/levels.js';
 import { countSolutions, solve, generatePuzzle } from '../src/puzzle.js';
+import { rate, techniqueOf } from '../src/analyze.js';
 
 let failures = 0;
 
@@ -66,9 +67,29 @@ function validate(label, size, regions, solution) {
 check('100 levels shipped', LEVELS.length === 100);
 check('level numbers are 1..100', LEVELS.every((level, i) => level.n === i + 1));
 
+let previous = { tier: 0, size: 0 };
+const spread = new Map();
+
 for (const entry of LEVELS) {
   const level = loadLevel(entry.n);
   validate(`level ${entry.n}`, level.size, level.regions, level.solution);
+
+  // Every campaign level must be reachable by pure logic, and the recorded
+  // tier has to be the one the solver actually needs.
+  const rating = rate(level.size, level.regions);
+  check(`level ${entry.n}: solvable without guessing`, rating.solved);
+  check(`level ${entry.n}: tier ${entry.d} matches solver (got ${rating.tier})`, rating.tier === entry.d);
+
+  // Difficulty never goes backwards: tier first, board size second.
+  const order = (x) => x.tier * 100 + x.size;
+  check(
+    `level ${entry.n}: not easier than level ${entry.n - 1}`,
+    order({ tier: entry.d, size: entry.s }) >= order(previous),
+  );
+  previous = { tier: entry.d, size: entry.s };
+
+  const key = `tier ${entry.d} ${techniqueOf(entry.d).name}`;
+  spread.set(key, (spread.get(key) ?? 0) + 1);
 }
 
 for (const size of [5, 6, 7, 8, 9, 10]) {
@@ -83,3 +104,4 @@ if (failures > 0) {
   process.exit(1);
 }
 console.log(`all checks passed (${LEVELS.length} levels + 30 endless puzzles)`);
+for (const [key, count] of spread) console.log(`  ${key}: ${count} levels`);
