@@ -1,0 +1,97 @@
+# 柴犬謎陣 · Shiba Grid
+
+100 關邏輯推理謎題。純靜態網頁，沒有打包工具、沒有相依套件，直接丟上 GitHub Pages 就能玩。
+
+![玩法](https://img.shields.io/badge/關卡-100-d97b34) ![技術](https://img.shields.io/badge/技術-原生%20HTML%2FCSS%2FJS-444)
+
+## 玩法
+
+盤面被切成幾個顏色區塊，要在每個區塊裡放一隻柴犬：
+
+- **一種顏色一隻柴** — 每個顏色區塊剛好一隻
+- **每列每欄各一隻** — 橫的直的都不能重複
+- **八個方向不相鄰** — 兩隻柴不能上下左右或斜角貼在一起
+
+操作：
+
+| 動作 | 效果 |
+| --- | --- |
+| 單點 | 標叉／取消叉 |
+| 快速雙點 | 放上柴犬／收回 |
+| 按住滑動 | 連續標叉 |
+| 右鍵（電腦） | 直接放柴犬 |
+| 方向鍵 / 空白鍵 / Enter | 移動 / 標叉 / 放柴犬 |
+
+## 關於原創性
+
+這個專案的規則屬於公有的邏輯謎題類型（Star Battle / N-Queens 變體，市面上有多款同型遊戲）。**遊戲規則與機制本身不受著作權保護**，但別人的程式碼與美術資源受保護。
+
+因此這裡的每一行程式碼、CSS、SVG 插圖都是為本專案重新寫、重新畫的，沒有複製任何既有網站的原始碼或素材。如果你要繼續改，請維持同樣做法：可以參考別人的規則和 UX 想法，不要複製檔案。
+
+## 本地執行
+
+ES modules 不能用 `file://` 開啟，要起一個小型伺服器：
+
+```bash
+git clone https://github.com/chung223/cat-dog.git
+cd cat-dog
+python3 -m http.server 8000   # 或 npx serve .
+```
+
+然後開 <http://localhost:8000>。
+
+## 部署到 GitHub Pages
+
+兩種方式，擇一即可。
+
+**A. 用內附的 Actions 流程（已設定好）**
+
+`.github/workflows/pages.yml` 會在推到 `claude/game-redevelopment-mfaf56` 時自動測試並部署。只要到 repo 的 **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions** 就會生效。
+
+**B. 直接從分支部署**
+
+**Settings → Pages → Source** 選 **Deploy from a branch**，分支選你要的那條、資料夾選 `/ (root)`。倉庫裡已經放了 `.nojekyll`，Jekyll 不會去動 `src/` 目錄。
+
+網址會是 `https://chung223.github.io/cat-dog/`。
+
+## 專案結構
+
+```
+index.html              版面
+styles.css              樣式（含深色模式）
+src/rng.js              可重現的亂數產生器
+src/puzzle.js           出題與求解演算法
+src/levels.js           預先產好的 100 關（由 tools 產生，勿手改）
+src/game.js             盤面狀態與規則判定
+src/shiba.js            柴犬 SVG 插圖
+src/storage.js          進度與設定（localStorage）
+src/main.js             畫面、輸入處理
+tools/generate-levels.mjs   重新產生 src/levels.js
+tools/verify-levels.mjs     驗證每一關都只有唯一解
+```
+
+## 出題演算法
+
+難的不是「產生一個盤面」，而是「產生一個**只有唯一解**的盤面」。做法分三步：
+
+1. **先放答案** — 隨機排出一組合法的柴犬位置。因為每列每欄各一隻，「八方向不相鄰」其實只剩一條要檢查的規則：相鄰兩列的欄位至少要差 2。
+2. **再長出顏色區塊** — 從每隻柴犬出發向外做隨機 flood fill，直到填滿整個盤面。這樣每個區塊必定是連通的，而且剛好包含一隻柴犬。
+3. **修到唯一解** — 單純隨機產生的區塊常常有多組解（9×9 幾乎每次都是）。所以會反覆求解：每找到一組「非預期的解」，就把那組解用到、但正確解沒用到的某一格改判給隔壁區塊。這一格不會是任何一隻正解柴犬的位置，所以正解永遠存活，而那組雜解立刻失效。重複到只剩唯一解為止。
+
+10×10 產一題大約要 0.3 秒，所以 100 關是先用 `tools/generate-levels.mjs` 產好存成資料（約 7 KB）；無盡模式則是現場即時產生。
+
+驗證：
+
+```bash
+node tools/verify-levels.mjs
+```
+
+會檢查 100 關 + 30 題隨機題目的區塊連通性、四條規則、以及唯一解。
+
+## 想改成別的動物？
+
+`src/shiba.js` 裡就是一張 SVG，換掉它就換了主角；顏色在 `styles.css` 最上面的 `--rg0` ~ `--rg9`。
+
+## 授權
+
+MIT，見 [LICENSE](LICENSE)。

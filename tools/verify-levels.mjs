@@ -1,0 +1,85 @@
+// Checks every shipped level, plus a sample of endless-mode puzzles.
+//
+//   node tools/verify-levels.mjs
+
+import { LEVELS, loadLevel } from '../src/levels.js';
+import { countSolutions, solve, generatePuzzle } from '../src/puzzle.js';
+
+let failures = 0;
+
+function check(label, condition) {
+  if (!condition) {
+    failures++;
+    console.error(`FAIL  ${label}`);
+  }
+}
+
+function connected(size, regions, region) {
+  const members = [];
+  for (let i = 0; i < regions.length; i++) if (regions[i] === region) members.push(i);
+  if (members.length === 0) return false;
+  const wanted = new Set(members);
+  const seen = new Set([members[0]]);
+  const queue = [members[0]];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    const row = Math.floor(current / size);
+    const col = current % size;
+    const neighbours = [];
+    if (row > 0) neighbours.push(current - size);
+    if (row < size - 1) neighbours.push(current + size);
+    if (col > 0) neighbours.push(current - 1);
+    if (col < size - 1) neighbours.push(current + 1);
+    for (const n of neighbours) {
+      if (wanted.has(n) && !seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return seen.size === members.length;
+}
+
+function validate(label, size, regions, solution) {
+  check(`${label}: cell count`, regions.length === size * size);
+  check(`${label}: region ids in range`, regions.every((r) => r >= 0 && r < size));
+
+  for (let region = 0; region < size; region++) {
+    check(`${label}: region ${region} is connected`, connected(size, regions, region));
+  }
+
+  const columns = new Set(solution);
+  check(`${label}: one shiba per column`, columns.size === size);
+  check(`${label}: columns in range`, solution.every((c) => c >= 0 && c < size));
+
+  const used = new Set(solution.map((col, row) => regions[row * size + col]));
+  check(`${label}: one shiba per region`, used.size === size);
+
+  for (let row = 1; row < size; row++) {
+    check(`${label}: rows ${row - 1}/${row} not touching`, Math.abs(solution[row] - solution[row - 1]) > 1);
+  }
+
+  check(`${label}: exactly one solution`, countSolutions(size, regions, 3) === 1);
+  check(`${label}: solver agrees`, String(solve(size, regions)) === String(solution));
+}
+
+check('100 levels shipped', LEVELS.length === 100);
+check('level numbers are 1..100', LEVELS.every((level, i) => level.n === i + 1));
+
+for (const entry of LEVELS) {
+  const level = loadLevel(entry.n);
+  validate(`level ${entry.n}`, level.size, level.regions, level.solution);
+}
+
+for (const size of [5, 6, 7, 8, 9, 10]) {
+  for (let i = 0; i < 5; i++) {
+    const puzzle = generatePuzzle(size, 424242 + size * 1000 + i);
+    validate(`endless ${size}x${size} #${i}`, size, puzzle.regions, puzzle.solution);
+  }
+}
+
+if (failures > 0) {
+  console.error(`\n${failures} check(s) failed`);
+  process.exit(1);
+}
+console.log(`all checks passed (${LEVELS.length} levels + 30 endless puzzles)`);

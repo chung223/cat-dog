@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7efe3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+<meta name="description" content="柴犬謎陣 — 100 關邏輯推理謎題。每種顏色一隻柴、每列每欄各一隻、八個方向不相鄰。">
+<title>柴犬謎陣 · 100 關邏輯挑戰</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M15 23 12 5l15 10z' fill='%23c97c3c'/%3E%3Cpath d='M49 23 52 5 37 15z' fill='%23c97c3c'/%3E%3Cpath d='M32 11c14 0 22 10 22 22s-10 22-22 22S10 45 10 33s8-22 22-22z' fill='%23e8a45d'/%3E%3Cpath d='M32 29c10 0 16 6 16 13s-7 14-16 14-16-6.5-16-14 6-13 16-13z' fill='%23fff7ec'/%3E%3Cellipse cx='24' cy='31.5' rx='3.1' ry='3.7' fill='%2333241a'/%3E%3Cellipse cx='40' cy='31.5' rx='3.1' ry='3.7' fill='%2333241a'/%3E%3Cpath d='M28.6 37h6.8L32 41.4z' fill='%2333241a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <button class="icon-btn" id="btn-back" type="button" hidden aria-label="返回">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8"/></svg>
+    </button>
+    <h1 class="topbar-title" id="topbar-title">柴犬謎陣</h1>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btn-help" type="button" aria-label="玩法說明">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 1 1 3.6 3c-.7.3-1 .9-1 1.7v.4"/><circle cx="11.8" cy="17.4" r="1.1" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-settings" type="button" aria-label="設定">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.2v2.1M12 18.7v2.1M20.8 12h-2.1M5.3 12H3.2M18.2 5.8l-1.5 1.5M7.3 16.7l-1.5 1.5M18.2 18.2l-1.5-1.5M7.3 7.3 5.8 5.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ── Home ───────────────────────────────────────── -->
+    <section class="view view-home" id="view-home">
+      <div class="hero">
+        <div class="hero-art" id="hero-art"></div>
+        <h2 class="hero-title">柴犬謎陣</h2>
+        <p class="hero-sub">100 關邏輯推理挑戰</p>
+      </div>
+
+      <div class="progress-card">
+        <div class="progress-line">
+          <span>闖關進度</span>
+          <strong id="progress-text">0 / 100</strong>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
+
+      <div class="menu">
+        <button class="btn btn-primary" id="btn-continue" type="button">開始第 1 關</button>
+        <button class="btn" id="btn-levels" type="button">選擇關卡</button>
+        <button class="btn" id="btn-endless" type="button">無盡模式</button>
+        <button class="btn btn-quiet" id="btn-rules" type="button">玩法說明</button>
+      </div>
+    </section>
+
+    <!-- ── Level select ───────────────────────────────── -->
+    <section class="view view-levels" id="view-levels" hidden>
+      <div class="level-grid" id="level-grid"></div>
+    </section>
+
+    <!-- ── Game ───────────────────────────────────────── -->
+    <section class="view view-game" id="view-game" hidden>
+      <div class="hud">
+        <div class="hud-item"><span class="hud-label">關卡</span><strong id="hud-level">1</strong></div>
+        <div class="hud-item"><span class="hud-label">柴犬</span><strong id="hud-count">0 / 5</strong></div>
+        <div class="hud-item" id="hud-timer-wrap"><span class="hud-label">時間</span><strong id="hud-timer">0:00</strong></div>
+      </div>
+
+      <div class="board-wrap">
+        <div class="board" id="board" role="grid" aria-label="謎題盤面"></div>
+        <div class="board-flash" id="board-flash" aria-hidden="true"></div>
+      </div>
+
+      <p class="hint-line" id="hint-line" role="status" aria-live="polite"></p>
+
+      <div class="toolbar">
+        <button class="tool" id="btn-undo" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h10a5 5 0 0 1 0 10h-4"/><path d="m8 5-4 4 4 4"/></svg>
+          <span>復原</span>
+        </button>
+        <button class="tool" id="btn-clear" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"/><path d="M9 7V5h6v2"/><path d="M7 7l1 12h8l1-12"/></svg>
+          <span>清除</span>
+        </button>
+        <button class="tool" id="btn-hint" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 1 3.6 10.8c-.6.5-.9 1.1-1 1.7l-.1.5h-5l-.1-.5c-.1-.6-.4-1.2-1-1.7A6 6 0 0 1 12 3z"/></svg>
+          <span>提示</span>
+        </button>
+        <button class="tool" id="btn-next-puzzle" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+          <span>換一題</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Dialogs ──────────────────────────────────────── -->
+<dialog class="sheet" id="dlg-help">
+  <h2>玩法說明</h2>
+  <ul class="rules">
+    <li><b>一種顏色一隻柴</b>　每個顏色區塊裡剛好放一隻。</li>
+    <li><b>每列每欄各一隻</b>　橫的直的都不能重複。</li>
+    <li><b>八個方向不相鄰</b>　兩隻柴不能上下左右或斜角貼在一起。</li>
+  </ul>
+  <h3>操作</h3>
+  <ul class="rules">
+    <li><b>單點</b>　標叉／取消叉</li>
+    <li><b>快速雙點</b>　放上柴犬／收回</li>
+    <li><b>按住滑動</b>　連續標叉</li>
+    <li><b>電腦</b>　右鍵直接放柴犬；方向鍵移動，空白鍵標叉，Enter 放柴犬</li>
+  </ul>
+  <form method="dialog"><button class="btn btn-primary" value="close">知道了</button></form>
+</dialog>
+
+<dialog class="sheet" id="dlg-settings">
+  <h2>設定</h2>
+  <label class="switch">
+    <span><b>自動標叉</b><small>放上柴犬後，自動把不可能的格子打叉</small></span>
+    <input type="checkbox" id="opt-auto">
+  </label>
+  <label class="switch">
+    <span><b>顯示計時</b><small>關掉就慢慢想，沒有壓力</small></span>
+    <input type="checkbox" id="opt-timer">
+  </label>
+  <button class="btn btn-danger" id="btn-reset-progress" type="button">清除所有進度</button>
+  <form method="dialog"><button class="btn btn-primary" value="close">完成</button></form>
+</dialog>
+
+<dialog class="sheet" id="dlg-endless">
+  <h2>無盡模式</h2>
+  <p class="win-stats">選一個盤面大小，題目每次重新產生，永遠不會重複。</p>
+  <div class="size-grid" id="size-grid"></div>
+  <form method="dialog"><button class="btn btn-quiet" value="close">取消</button></form>
+</dialog>
+
+<dialog class="sheet sheet-win" id="dlg-win">
+  <div class="win-art" id="win-art"></div>
+  <h2 id="win-title">過關！</h2>
+  <p class="win-stats" id="win-stats"></p>
+  <div class="win-actions">
+    <button class="btn btn-primary" id="btn-win-next" type="button">下一關</button>
+    <button class="btn" id="btn-win-replay" type="button">再玩一次</button>
+    <button class="btn btn-quiet" id="btn-win-levels" type="button">回關卡列表</button>
+  </div>
+</dialog>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

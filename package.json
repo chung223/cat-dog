@@ -1,0 +1,13 @@
+{
+  "name": "shiba-grid",
+  "version": "1.0.0",
+  "description": "柴犬謎陣 — 100 關邏輯推理謎題，純靜態網頁遊戲",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node tools/verify-levels.mjs",
+    "levels": "node tools/generate-levels.mjs"
+  },
+  "license": "MIT"
+}
