@@ -92,6 +92,34 @@ for (const entry of LEVELS) {
   spread.set(key, (spread.get(key) ?? 0) + 1);
 }
 
+// Guard against the bug that once capped the game at the easy end of every
+// tier: each band must climb, and the finale must be among the hardest boards
+// in the game rather than a soft landing.
+const scored = LEVELS.map((entry) => {
+  const level = loadLevel(entry.n);
+  const rating = rate(level.size, level.regions);
+  return { n: entry.n, size: entry.s, tier: entry.d, score: rating.counts[entry.d - 1] * 100 + rating.effort };
+});
+
+let band = [scored[0]];
+for (const level of scored.slice(1).concat([null])) {
+  if (level && level.tier === band[0].tier && level.size === band[0].size) {
+    band.push(level);
+    continue;
+  }
+  const first = band[0];
+  const last = band.at(-1);
+  check(
+    `band ${first.size}x${first.size} tier ${first.tier}: climbs (#${first.n} ${first.score} -> #${last.n} ${last.score})`,
+    last.score > first.score,
+  );
+  if (level) band = [level];
+}
+
+const ranked = scored.slice().sort((a, b) => b.score - a.score);
+const finaleRank = ranked.findIndex((level) => level.n === LEVELS.length) + 1;
+check(`the last level is a finale (ranked ${finaleRank} hardest of ${LEVELS.length})`, finaleRank <= 5);
+
 check('one lesson per technique', LESSONS.length === 5);
 for (let tier = 1; tier <= 5; tier++) {
   const lesson = loadLesson(tier);

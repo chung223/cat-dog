@@ -13,24 +13,27 @@ import { rate, techniqueOf } from '../src/analyze.js';
 
 // { levels, board size, hardest technique the level must actually require }
 const CURVE = [
-  { count: 10, size: 5, tier: 1 },
-  { count: 8, size: 6, tier: 1 },
-  { count: 10, size: 6, tier: 2 },
-  { count: 8, size: 7, tier: 2 },
+  { count: 5, size: 5, tier: 1 },
+  { count: 5, size: 6, tier: 1 },
+  { count: 7, size: 6, tier: 2 },
+  { count: 7, size: 7, tier: 2 },
   { count: 12, size: 7, tier: 3 },
   { count: 12, size: 8, tier: 3 },
-  { count: 10, size: 8, tier: 4 },
-  { count: 10, size: 9, tier: 4 },
-  { count: 10, size: 9, tier: 5 },
-  { count: 10, size: 10, tier: 5 },
+  { count: 13, size: 8, tier: 4 },
+  { count: 13, size: 9, tier: 4 },
+  { count: 13, size: 9, tier: 5 },
+  { count: 13, size: 10, tier: 5 },
 ];
 
-const MAX_ATTEMPTS = 6000;
+const MAX_ATTEMPTS = 20000;
+// Deep pools so the top of each band reaches the genuinely nasty boards
+// instead of whatever turned up first.
+const POOL_FACTOR = 4;
 
 /** Generate until every tier wanted at this size has a deep enough pool. */
 function poolFor(size, wanted) {
   const pools = new Map([...wanted.keys()].map((tier) => [tier, []]));
-  const target = (tier) => wanted.get(tier) * 2;
+  const target = (tier) => wanted.get(tier) * POOL_FACTOR;
 
   let seed = size * 1_000_003 + 17;
   let attempts = 0;
@@ -56,10 +59,10 @@ function poolFor(size, wanted) {
     );
   }
 
-  // Easiest first inside a band, so difficulty still climbs within a tier.
-  for (const pool of pools.values()) {
-    pool.sort((a, b) => a.rating.effort - b.rating.effort || a.rating.counts[a.rating.tier - 1] - b.rating.counts[b.rating.tier - 1]);
-  }
+  // Easiest first inside a band. How often the hardest technique is needed
+  // hurts more than the raw step count, so it dominates the ordering.
+  const score = ({ rating }) => rating.counts[rating.tier - 1] * 100 + rating.effort;
+  for (const pool of pools.values()) pool.sort((a, b) => score(a) - score(b));
   process.stdout.write('\n');
   return pools;
 }
@@ -79,15 +82,31 @@ for (const [size, wanted] of wantedBySize) {
 const levels = [];
 let number = 1;
 
-for (const band of CURVE) {
+for (const [index, band] of CURVE.entries()) {
   const pool = poolsBySize.get(band.size).get(band.tier);
   if (pool.length < band.count) {
     throw new Error(
       `only found ${pool.length}/${band.count} ${band.size}x${band.size} puzzles at tier ${band.tier}`,
     );
   }
+  // Spread the band evenly across its pool. Taking from the front would cap
+  // the game at the easy end of every tier — the bug that left the old last
+  // level easier than the middle of the game.
+  //
+  // A tier that spans two board sizes is one long ramp, so the second size
+  // starts partway up its own pool; otherwise stepping up a size would reset
+  // the climb and the bigger board would feel easier than the smaller one.
+  const continuing = index > 0 && CURVE[index - 1].tier === band.tier;
+  const floor = continuing ? Math.floor(pool.length * 0.45) : 0;
+  const span = pool.length - 1 - floor;
+
+  const picks = [];
   for (let i = 0; i < band.count; i++) {
-    const { puzzle, rating } = pool.shift();
+    picks.push(pool[floor + Math.round((i * span) / (band.count - 1))]);
+  }
+
+  for (let i = 0; i < band.count; i++) {
+    const { puzzle, rating } = picks[i];
     levels.push({
       n: number++,
       s: band.size,
