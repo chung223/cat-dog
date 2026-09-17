@@ -5,34 +5,45 @@
 // reaching for the cheapest one that makes progress. The rating is the hardest
 // technique it was ever forced to use — a far better difficulty signal than
 // board size.
+//
+// Everything is written in terms of what a unit still owes. At one piece per
+// unit that collapses to the familiar rules; at two it does not, and the
+// difference matters: placing a piece no longer closes its row, because the
+// row still wants another one.
 
 export const TECHNIQUES = [
   {
     tier: 1,
     id: 'single',
     name: '唯一格',
-    hint: '某一列、某一欄或某個顏色區塊，只剩下一格還能放。',
+    hint: '某一列、某一欄或某個顏色區塊剩下的空格，剛好等於還要放的數量——那就全都是了。',
   },
   {
     tier: 2,
     id: 'confine',
     name: '區塊鎖定',
-    hint: '某個顏色區塊的可能位置全擠在同一列（或同一欄），那一列的其他格就都不行了。',
+    hint: '某個顏色區塊剩下的位置全擠在同一列裡，而那一列剩下的數量剛好一樣多，那一列的其他格就都不行了。',
   },
   {
     tier: 3,
     id: 'sweep',
     name: '共同排除',
-    hint: '某一列／欄／區塊不管放在哪個位置，都會殺掉同一格——那格就是死的。',
+    hint: '某一列／欄／區塊剩下的位置，不管怎麼挑都一定會殺掉某一格——那格就是死的。',
   },
   {
     tier: 4,
-    id: 'hall',
-    name: '集合配對',
-    hint: 'k 個區塊的可能位置只落在 k 列裡，這 k 列就被它們包了，其他區塊進不來。',
+    id: 'combo',
+    name: '配對不成立',
+    hint: '一個單位要放兩個以上時，有些格子放下去，剩下的就湊不出完整的一組了——那格可以直接排除。（每格只放一個時用不到這招。）',
   },
   {
     tier: 5,
+    id: 'hall',
+    name: '集合配對',
+    hint: '幾個區塊還要放的總數，剛好等於它們能用的那幾列還能放的總數，那幾列就被包了。',
+  },
+  {
+    tier: 6,
     id: 'assume',
     name: '假設反證',
     hint: '先假設放在某一格，一路推下去會出現矛盾，所以那一格不能放。',
@@ -49,16 +60,16 @@ function describe(unit) {
   return unit.kind === 'region' ? '這個顏色區塊' : `第 ${unit.index + 1} ${KIND_NAMES[unit.kind]}`;
 }
 
-export function buildContext(size, regions) {
+export function buildContext(size, regions, stars = 1) {
   const cells = size * size;
   const rows = [];
   const cols = [];
   const regs = [];
 
   for (let i = 0; i < size; i++) {
-    rows.push({ kind: 'row', index: i, cells: [] });
-    cols.push({ kind: 'col', index: i, cells: [] });
-    regs.push({ kind: 'region', index: i, cells: [] });
+    rows.push({ kind: 'row', index: i, cells: [], stars });
+    cols.push({ kind: 'col', index: i, cells: [], stars });
+    regs.push({ kind: 'region', index: i, cells: [], stars });
   }
   for (let i = 0; i < cells; i++) {
     rows[Math.floor(i / size)].cells.push(i);
@@ -66,37 +77,37 @@ export function buildContext(size, regions) {
     regs[regions[i]].cells.push(i);
   }
 
-  // kills[c][x] — placing at c rules x out.
-  const kills = [];
+  // touches[c][x] — a piece at c always rules x out, whatever else is going on.
+  const touches = [];
+  const unitsOf = [];
   for (let c = 0; c < cells; c++) {
     const row = Math.floor(c / size);
     const col = c % size;
     const mask = new Uint8Array(cells);
-    for (let x = 0; x < cells; x++) {
-      if (x === c) continue;
-      const xr = Math.floor(x / size);
-      const xc = x % size;
-      if (
-        xr === row ||
-        xc === col ||
-        regions[x] === regions[c] ||
-        (Math.abs(xr - row) <= 1 && Math.abs(xc - col) <= 1)
-      ) {
-        mask[x] = 1;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr;
+        const k = col + dc;
+        if (r < 0 || k < 0 || r >= size || k >= size) continue;
+        const x = r * size + k;
+        if (x !== c) mask[x] = 1;
       }
     }
-    kills.push(mask);
+    touches.push(mask);
+    unitsOf.push([rows[row], cols[col], regs[regions[c]]]);
   }
 
   return {
     size,
+    stars,
     cells,
     regions,
     rows,
     cols,
     regs,
     units: [...rows, ...cols, ...regs],
-    kills,
+    touches,
+    unitsOf,
     rowOf: (i) => Math.floor(i / size),
     colOf: (i) => i % size,
     regionOf: (i) => regions[i],
@@ -104,22 +115,42 @@ export function buildContext(size, regions) {
 }
 
 const openCells = (unit, state) => unit.cells.filter((i) => state[i] === UNKNOWN);
-const isFilled = (unit, state) => unit.cells.some((i) => state[i] === PLACED);
+const owed = (unit, state) => unit.stars - unit.cells.filter((i) => state[i] === PLACED).length;
 
 export function place(context, state, index) {
   state[index] = PLACED;
-  const mask = context.kills[index];
+
+  const mask = context.touches[index];
   for (let x = 0; x < context.cells; x++) {
     if (mask[x] && state[x] === UNKNOWN) state[x] = EXCLUDED;
   }
+
+  // A unit only closes once it holds its full quota.
+  for (const unit of context.unitsOf[index]) {
+    if (owed(unit, state) > 0) continue;
+    for (const x of unit.cells) if (state[x] === UNKNOWN) state[x] = EXCLUDED;
+  }
+}
+
+/** Would a piece at `c` rule `x` out, given where things stand? */
+function wouldKill(context, state, c, x) {
+  if (context.touches[c][x]) return true;
+  for (const unit of context.unitsOf[c]) {
+    // Filling the unit's last slot closes it, taking x with it.
+    if (owed(unit, state) === 1 && unit.cells.includes(x)) return true;
+  }
+  return false;
 }
 
 function broken(context, state) {
-  return context.units.some((unit) => !isFilled(unit, state) && openCells(unit, state).length === 0);
+  return context.units.some((unit) => {
+    const need = owed(unit, state);
+    return need < 0 || openCells(unit, state).length < need;
+  });
 }
 
 function complete(context, state) {
-  return context.units.every((unit) => isFilled(unit, state));
+  return context.units.every((unit) => owed(unit, state) === 0);
 }
 
 /**
@@ -128,45 +159,56 @@ function complete(context, state) {
  * the same code drives both the difficulty rating and the in-game hint.
  */
 
-/* ── Tier 1: only one square left in a row, column or region ─── */
+/* ── Tier 1: the empty cells left are exactly what the unit still owes ─── */
 
 function applySingle(context, state, first) {
   let progress = false;
   for (const unit of context.units) {
-    if (isFilled(unit, state)) continue;
+    const need = owed(unit, state);
+    if (need <= 0) continue;
     const open = openCells(unit, state);
-    if (open.length !== 1) continue;
-    place(context, state, open[0]);
+    if (open.length !== need) continue;
+
+    for (const index of open) place(context, state, index);
     if (first) {
-      return { tier: 1, place: open[0], because: `${describe(unit)}只剩下這一格可以放。`, focus: unit.cells };
+      return {
+        tier: 1,
+        place: open,
+        because: `${describe(unit)}剩下的空格剛好只有 ${need} 格，全都要放。`,
+        focus: unit.cells,
+      };
     }
     progress = true;
   }
   return progress;
 }
 
-/* ── Tier 2: a region confined to one line, or a line to one region ─── */
+/* ── Tier 2: a unit's remaining places all sit inside another unit ─── */
 
 function applyConfine(context, state, first) {
   let progress = false;
 
-  const lines = [
+  const pairings = [
     [context.regs, context.rowOf, (i) => context.rows[i], '列'],
     [context.regs, context.colOf, (i) => context.cols[i], '欄'],
     [context.rows, context.regionOf, (i) => context.regs[i], '顏色區塊'],
     [context.cols, context.regionOf, (i) => context.regs[i], '顏色區塊'],
   ];
 
-  for (const [units, keyOf, unitAt, label] of lines) {
+  for (const [units, keyOf, unitAt, label] of pairings) {
     for (const unit of units) {
-      if (isFilled(unit, state)) continue;
+      const need = owed(unit, state);
+      if (need <= 0) continue;
       const open = openCells(unit, state);
       if (open.length < 2) continue;
 
       const key = keyOf(open[0]);
       if (!open.every((i) => keyOf(i) === key)) continue;
 
+      // Only a partner that owes exactly the same amount is fully consumed.
       const target = unitAt(key);
+      if (owed(target, state) !== need) continue;
+
       const hits = target.cells.filter((x) => state[x] === UNKNOWN && !open.includes(x));
       if (hits.length === 0) continue;
 
@@ -176,7 +218,7 @@ function applyConfine(context, state, first) {
         return {
           tier: 2,
           exclude: hits,
-          because: `${describe(unit)}的可能位置全在${where}裡，所以${where}的其他格都不行。`,
+          because: `${describe(unit)}剩下的 ${need} 個位置全在${where}裡，剛好把${where}佔滿，其他格都不行。`,
           focus: open,
         };
       }
@@ -187,20 +229,28 @@ function applyConfine(context, state, first) {
   return progress;
 }
 
-/* ── Tier 3: a square every placement of some unit would kill ─── */
+/* ── Tier 3: too few survivors for the unit to spare ─── */
 
 function applySweep(context, state, first) {
   let progress = false;
 
   for (const unit of context.units) {
-    if (isFilled(unit, state)) continue;
+    const need = owed(unit, state);
+    if (need <= 0) continue;
     const open = openCells(unit, state);
-    if (open.length < 2) continue;
+    if (open.length <= need) continue; // tier 1 already handles the exact fit
 
     const hits = [];
     for (let x = 0; x < context.cells; x++) {
       if (state[x] !== UNKNOWN || open.includes(x)) continue;
-      if (open.every((c) => context.kills[c][x])) hits.push(x);
+      // If fewer than `need` of the unit's options spare x, some chosen piece
+      // must be one that kills it.
+      let spare = 0;
+      for (const c of open) {
+        if (!wouldKill(context, state, c, x)) spare++;
+        if (spare >= need) break;
+      }
+      if (spare < need) hits.push(x);
     }
     if (hits.length === 0) continue;
 
@@ -209,7 +259,7 @@ function applySweep(context, state, first) {
       return {
         tier: 3,
         exclude: hits,
-        because: `${describe(unit)}不管放在哪一格，都會殺掉標起來的格子。`,
+        because: `${describe(unit)}還要放 ${need} 個，不管怎麼挑都會殺掉標起來的格子。`,
         focus: open,
       };
     }
@@ -219,7 +269,69 @@ function applySweep(context, state, first) {
   return progress;
 }
 
-/* ── Tier 4: k units whose options fit in exactly k partners ─── */
+/* ── Tier 4: no legal combination can include this cell ─── */
+
+/** Could these cells all hold pieces at once, as far as the units allow? */
+function compatible(context, state, chosen) {
+  for (let a = 0; a < chosen.length; a++) {
+    for (let b = a + 1; b < chosen.length; b++) {
+      if (context.touches[chosen[a]][chosen[b]]) return false;
+    }
+  }
+  const load = new Map();
+  for (const cell of chosen) {
+    for (const unit of context.unitsOf[cell]) {
+      const count = (load.get(unit) ?? 0) + 1;
+      if (count > owed(unit, state)) return false;
+      load.set(unit, count);
+    }
+  }
+  return true;
+}
+
+/** Is there a legal way for `unit` to take `need` of its options, using `seed`? */
+function canFill(context, state, options, need, seed) {
+  const search = (start, chosen) => {
+    if (chosen.length === need) return true;
+    for (let i = start; i < options.length; i++) {
+      if (options[i] === seed) continue;
+      const next = [...chosen, options[i]];
+      if (!compatible(context, state, next)) continue;
+      if (search(i + 1, next)) return true;
+    }
+    return false;
+  };
+  return search(0, [seed]);
+}
+
+function applyCombo(context, state, first) {
+  let progress = false;
+
+  for (const unit of context.units) {
+    const need = owed(unit, state);
+    if (need < 2) continue; // with one to place, any single option is a combination
+    const open = openCells(unit, state);
+    if (open.length <= need) continue;
+
+    const hits = open.filter((cell) => !canFill(context, state, open, need, cell));
+    if (hits.length === 0) continue;
+
+    for (const x of hits) state[x] = EXCLUDED;
+    if (first) {
+      return {
+        tier: 4,
+        exclude: hits,
+        because: `${describe(unit)}還要放 ${need} 個。標起來的格子放下去，剩下的就湊不出另外 ${need - 1} 個了。`,
+        focus: open,
+      };
+    }
+    progress = true;
+  }
+
+  return progress;
+}
+
+/* ── Tier 5: demand meets capacity exactly ─── */
 
 function* subsets(items, size) {
   const pick = function* (start, chosen) {
@@ -243,7 +355,7 @@ function applyHall(context, state, first) {
   ];
 
   for (const [from, to, partnerOf, ownerOf, fromLabel, toLabel] of pairings) {
-    const available = from.filter((unit) => !isFilled(unit, state));
+    const available = from.filter((unit) => owed(unit, state) > 0);
 
     for (const width of [2, 3]) {
       if (available.length <= width) continue;
@@ -252,13 +364,19 @@ function applyHall(context, state, first) {
         const owners = new Set(group.map((unit) => unit.index));
         const partners = new Set();
         const focus = [];
+        let demand = 0;
+
         for (const unit of group) {
+          demand += owed(unit, state);
           for (const cell of openCells(unit, state)) {
             partners.add(partnerOf(cell));
             focus.push(cell);
           }
         }
-        if (partners.size !== width) continue;
+
+        let capacity = 0;
+        for (const partner of partners) capacity += owed(to[partner], state);
+        if (demand !== capacity) continue;
 
         const hits = [];
         for (const partner of partners) {
@@ -273,9 +391,9 @@ function applyHall(context, state, first) {
         // this technique the puzzle really demands.
         return first
           ? {
-              tier: 4,
+              tier: 5,
               exclude: hits,
-              because: `這 ${width} 個${fromLabel}的可能位置，剛好只落在 ${width} 個${toLabel}裡，所以那些${toLabel}的其他格都被佔走了。`,
+              because: `這 ${width} 個${fromLabel}還要放 ${demand} 個，而它們能用的${toLabel}加起來也只剩 ${capacity} 個位置，剛好被佔滿。`,
               focus,
             }
           : true;
@@ -286,7 +404,7 @@ function applyHall(context, state, first) {
   return false;
 }
 
-/* ── Tier 5: assume, propagate, hit a contradiction ─── */
+/* ── Tier 6: assume, propagate, hit a contradiction ─── */
 
 function applyAssume(context, state, first) {
   for (let x = 0; x < context.cells; x++) {
@@ -300,30 +418,31 @@ function applyAssume(context, state, first) {
         applySingle(context, trial) ||
         applyConfine(context, trial) ||
         applySweep(context, trial) ||
+        applyCombo(context, trial) ||
         applyHall(context, trial);
     }
     if (!broken(context, trial)) continue;
 
     state[x] = EXCLUDED;
     return first
-      ? { tier: 5, exclude: [x], because: '假設放在這一格，推下去會矛盾，所以這格不能放。', focus: [x] }
+      ? { tier: 6, exclude: [x], because: '假設放在這一格，推下去會矛盾，所以這格不能放。', focus: [x] }
       : true;
   }
   return false;
 }
 
-const STEPS = [applySingle, applyConfine, applySweep, applyHall, applyAssume];
+const STEPS = [applySingle, applyConfine, applySweep, applyCombo, applyHall, applyAssume];
 
 /**
  * Solve with human techniques and report the hardest tier needed.
  * `tier` is null when even tier 5 runs dry, meaning the puzzle cannot be
  * finished without real guesswork.
  */
-export function rate(size, regions) {
-  const context = buildContext(size, regions);
+export function rate(size, regions, stars = 1) {
+  const context = buildContext(size, regions, stars);
   const state = new Int8Array(context.cells);
-  const counts = [0, 0, 0, 0, 0];
-  const firstUse = [0, 0, 0, 0, 0]; // 1-based step at which each tier first fires
+  const counts = [0, 0, 0, 0, 0, 0];
+  const firstUse = [0, 0, 0, 0, 0, 0]; // 1-based step at which each tier first fires
   let step = 0;
 
   for (let guard = 0; guard < 4000; guard++) {
@@ -354,7 +473,7 @@ export function rate(size, regions) {
     if (!moved) break;
   }
 
-  return { solved: false, tier: null, counts, effort: 0, topAt: 0 };
+  return { solved: false, tier: null, counts: [0, 0, 0, 0, 0, 0], effort: 0, topAt: 0 };
 }
 
 /**
@@ -363,8 +482,8 @@ export function rate(size, regions) {
  * squares out would come back identical every time, because the board it
  * reasons from would never change.
  */
-export function findNext(size, regions, placements, crossed = []) {
-  const context = buildContext(size, regions);
+export function findNext(size, regions, placements, crossed = [], stars = 1) {
+  const context = buildContext(size, regions, stars);
   const state = new Int8Array(context.cells);
 
   for (const index of placements) {

@@ -39,6 +39,11 @@
         <p class="hero-sub">100 關邏輯推理挑戰</p>
       </div>
 
+      <div class="mode-switch" id="mode-switch">
+        <button type="button" data-stars="1" aria-pressed="true">⭐ 一顆<small>經典</small></button>
+        <button type="button" data-stars="2" aria-pressed="false">⭐⭐ 兩顆<small>硬派</small></button>
+      </div>
+
       <div class="progress-card">
         <div class="progress-line">
           <span>闖關進度</span>
@@ -125,9 +130,9 @@
 <dialog class="sheet" id="dlg-help">
   <h2>玩法說明</h2>
   <ul class="rules">
-    <li><b>一個顏色區塊一個</b>　每個顏色區塊裡剛好放一個<span class="mascot-name">大便</span>。</li>
-    <li><b>每列每欄各一個</b>　橫的直的都不能重複。</li>
-    <li><b>八個方向不相鄰</b>　兩個<span class="mascot-name">大便</span>不能上下左右或斜角貼在一起。</li>
+    <li><b>每個顏色區塊放滿</b>　一顆模式每區一個，兩顆模式每區兩個。</li>
+    <li><b>每列每欄一樣多</b>　橫的直的都要放滿同樣的數量。</li>
+    <li><b>八個方向不相鄰</b>　兩個<span class="mascot-name">大便</span>不能上下左右或斜角貼在一起，同一列的兩個也不行。</li>
     <li><b>三次機會</b>　放錯三次這題就結束，可以在設定關掉。</li>
   </ul>
   <h3>推理技巧</h3>
@@ -200,11 +205,13 @@
 <dialog class="sheet" id="dlg-endless">
   <h2>無盡模式</h2>
   <p class="sheet-note">題目每次重新產生，永遠不會重複。</p>
+  <h3>每格幾個</h3>
+  <div class="star-grid" id="star-grid"></div>
   <h3>盤面大小</h3>
   <div class="size-grid" id="size-grid"></div>
-  <h3>難度</h3>
-  <p class="sheet-note">指定難度要一直重抽到抽中為止，大盤面可能要等一兩秒。</p>
-  <div class="tier-grid" id="tier-grid"></div>
+  <h3 class="tier-only">難度</h3>
+  <p class="sheet-note tier-only">指定難度要一直重抽到抽中為止，大盤面可能要等一兩秒。</p>
+  <div class="tier-grid tier-only" id="tier-grid"></div>
   <form method="dialog"><button class="btn btn-primary" id="btn-endless-go" value="close">開始</button></form>
 </dialog>
 

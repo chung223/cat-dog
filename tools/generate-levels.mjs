@@ -1,9 +1,13 @@
-// Pre-bakes the 100 campaign levels into src/levels.js.
+// Pre-bakes the campaigns into src/levels.js.
 //
 // Difficulty runs on two axes. Board size grows for scale, but the real ramp
 // is the hardest deduction each level demands (see src/analyze.js) — a 10x10
 // with fat regions can be easier than a mean 7x7, so size alone is a bad
 // curve. Levels are ordered by technique tier first, size second.
+//
+// The two-star campaign is its own thing. Almost every two-star board needs
+// the top technique, so tiers cannot separate them; they are ranked by how
+// many rounds of assume-and-contradict the solver is forced into.
 //
 //   node tools/generate-levels.mjs
 
@@ -19,10 +23,18 @@ const CURVE = [
   { count: 7, size: 7, tier: 2 },
   { count: 12, size: 7, tier: 3 },
   { count: 12, size: 8, tier: 3 },
-  { count: 13, size: 8, tier: 4 },
-  { count: 13, size: 9, tier: 4 },
+  { count: 13, size: 8, tier: 5 },
   { count: 13, size: 9, tier: 5 },
-  { count: 13, size: 10, tier: 5 },
+  { count: 13, size: 9, tier: 6 },
+  { count: 13, size: 10, tier: 6 },
+];
+
+// Two stars per row, column and region. Below 8x8 there is no legal placement
+// at all — the pieces cannot keep their distance.
+const CURVE_2 = [
+  { count: 6, size: 8 },
+  { count: 12, size: 9 },
+  { count: 12, size: 10 },
 ];
 
 const MAX_ATTEMPTS = 20000;
@@ -30,22 +42,46 @@ const MAX_ATTEMPTS = 20000;
 // instead of whatever turned up first.
 const POOL_FACTOR = 4;
 
+const encode = (cells) => cells.map((cell) => cell.toString(36).padStart(2, '0')).join('');
+
+// How often the hardest technique is needed hurts more than the raw step
+// count, so it dominates the ordering.
+const score = ({ rating }) => rating.counts[rating.tier - 1] * 100 + rating.effort;
+
+/**
+ * Spread a band evenly across its pool. Taking from the front would cap the
+ * game at the easy end of every tier — the bug that once left the last level
+ * easier than the middle of the game.
+ *
+ * A band continuing the previous one starts at the first puzzle that is at
+ * least as hard as where the last band finished, so stepping up a board size
+ * never hands the player an easier board than the one before it.
+ */
+function pick(pool, count, minScore) {
+  let floor = minScore === undefined ? 0 : pool.findIndex((entry) => score(entry) >= minScore);
+  if (floor < 0) floor = 0;
+  floor = Math.max(0, Math.min(floor, pool.length - count));
+
+  const span = pool.length - 1 - floor;
+  return Array.from({ length: count }, (_, i) => pool[floor + Math.round((i * span) / (count - 1))]);
+}
+
 /** Generate until every tier wanted at this size has a deep enough pool. */
-function poolFor(size, wanted) {
+function poolFor(size, stars, wanted) {
   const pools = new Map([...wanted.keys()].map((tier) => [tier, []]));
   const target = (tier) => wanted.get(tier) * POOL_FACTOR;
 
-  let seed = size * 1_000_003 + 17;
+  let seed = size * 1_000_003 + stars * 7_919 + 17;
   let attempts = 0;
 
   while (attempts < MAX_ATTEMPTS) {
     if ([...pools].every(([tier, pool]) => pool.length >= target(tier))) break;
     attempts++;
 
-    const puzzle = generatePuzzle(size, seed++);
-    if (countSolutions(size, puzzle.regions, 2) !== 1) continue;
+    const puzzle = generatePuzzle(size, seed++, stars);
+    if (!puzzle || countSolutions(size, puzzle.regions, 2, stars) !== 1) continue;
 
-    const rating = rate(size, puzzle.regions);
+    const rating = rate(size, puzzle.regions, stars);
     if (!rating.solved) continue; // never ship a level that needs guessing
 
     const pool = pools.get(rating.tier);
@@ -53,69 +89,82 @@ function poolFor(size, wanted) {
     pool.push({ puzzle, rating });
 
     process.stdout.write(
-      `\r${size}x${size}  ` +
+      `\r${stars}★ ${size}x${size}  ` +
         [...pools].map(([tier, list]) => `t${tier}:${list.length}/${target(tier)}`).join('  ') +
         `  (${attempts} tries)   `,
     );
   }
 
-  // Easiest first inside a band. How often the hardest technique is needed
-  // hurts more than the raw step count, so it dominates the ordering.
-  const score = ({ rating }) => rating.counts[rating.tier - 1] * 100 + rating.effort;
   for (const pool of pools.values()) pool.sort((a, b) => score(a) - score(b));
   process.stdout.write('\n');
   return pools;
 }
 
-const wantedBySize = new Map();
-for (const band of CURVE) {
-  if (!wantedBySize.has(band.size)) wantedBySize.set(band.size, new Map());
-  const wanted = wantedBySize.get(band.size);
-  wanted.set(band.tier, (wanted.get(band.tier) ?? 0) + band.count);
-}
-
-const poolsBySize = new Map();
-for (const [size, wanted] of wantedBySize) {
-  poolsBySize.set(size, poolFor(size, wanted));
-}
-
-const levels = [];
-let number = 1;
-
-for (const [index, band] of CURVE.entries()) {
-  const pool = poolsBySize.get(band.size).get(band.tier);
-  if (pool.length < band.count) {
-    throw new Error(
-      `only found ${pool.length}/${band.count} ${band.size}x${band.size} puzzles at tier ${band.tier}`,
-    );
-  }
-  // Spread the band evenly across its pool. Taking from the front would cap
-  // the game at the easy end of every tier — the bug that left the old last
-  // level easier than the middle of the game.
-  //
-  // A tier that spans two board sizes is one long ramp, so the second size
-  // starts partway up its own pool; otherwise stepping up a size would reset
-  // the climb and the bigger board would feel easier than the smaller one.
-  const continuing = index > 0 && CURVE[index - 1].tier === band.tier;
-  const floor = continuing ? Math.floor(pool.length * 0.45) : 0;
-  const span = pool.length - 1 - floor;
-
-  const picks = [];
-  for (let i = 0; i < band.count; i++) {
-    picks.push(pool[floor + Math.round((i * span) / (band.count - 1))]);
+function buildCampaign(curve, stars) {
+  const wantedBySize = new Map();
+  for (const band of curve) {
+    const tier = band.tier ?? 'any';
+    if (!wantedBySize.has(band.size)) wantedBySize.set(band.size, new Map());
+    const wanted = wantedBySize.get(band.size);
+    wanted.set(tier, (wanted.get(tier) ?? 0) + band.count);
   }
 
-  for (let i = 0; i < band.count; i++) {
-    const { puzzle, rating } = picks[i];
-    levels.push({
-      n: number++,
-      s: band.size,
-      d: band.tier,
-      r: puzzle.regions.join(''),
-      a: puzzle.solution.join(''),
-      effort: rating.effort,
-    });
+  // With no tier named, whatever the board turns out to need is fine — the
+  // ranking inside the pool does the sorting.
+  const poolsBySize = new Map();
+  for (const [size, wanted] of wantedBySize) {
+    if (wanted.has('any')) {
+      const need = wanted.get('any');
+      const merged = [];
+      let seed = size * 1_000_003 + stars * 7_919 + 17;
+      let attempts = 0;
+      while (merged.length < need * 3 && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        const puzzle = generatePuzzle(size, seed++, stars);
+        if (!puzzle || countSolutions(size, puzzle.regions, 2, stars) !== 1) continue;
+        const rating = rate(size, puzzle.regions, stars);
+        if (!rating.solved) continue;
+        merged.push({ puzzle, rating });
+        process.stdout.write(`\r${stars}★ ${size}x${size}  ${merged.length}/${need * 3}  (${attempts} tries)   `);
+      }
+      merged.sort((a, b) => score(a) - score(b));
+      poolsBySize.set(size, new Map([['any', merged]]));
+      process.stdout.write('\n');
+    } else {
+      poolsBySize.set(size, poolFor(size, stars, wanted));
+    }
   }
+
+  const levels = [];
+  let number = 1;
+  let lastScore;
+
+  for (const [index, band] of curve.entries()) {
+    const tier = band.tier ?? 'any';
+    const pool = poolsBySize.get(band.size).get(tier);
+    if (pool.length < band.count) {
+      throw new Error(
+        `only found ${pool.length}/${band.count} ${band.size}x${band.size} ${stars}-star puzzles at tier ${tier}`,
+      );
+    }
+    const continuing = index > 0 && (curve[index - 1].tier ?? 'any') === tier;
+    const chosen = pick(pool, band.count, continuing ? lastScore : undefined);
+    lastScore = score(chosen.at(-1));
+
+    for (const { puzzle, rating } of chosen) {
+      levels.push({
+        n: number++,
+        s: band.size,
+        d: rating.tier,
+        r: puzzle.regions.join(''),
+        a: encode(puzzle.solution),
+        effort: rating.effort,
+        top: rating.counts[rating.tier - 1],
+      });
+    }
+  }
+
+  return levels;
 }
 
 /**
@@ -124,19 +173,22 @@ for (const [index, band] of CURVE.entries()) {
  * away rather than after ten routine moves.
  */
 function findLesson(tier) {
-  const sizes = tier <= 2 ? [5, 6] : [6, 7];
+  // Pair-feasibility only exists once a unit holds more than one piece.
+  const stars = tier === 4 ? 2 : 1;
+  const sizes = stars === 2 ? [8] : tier <= 2 ? [5, 6] : [6, 7];
   let best = null;
 
   for (const size of sizes) {
     let seed = tier * 31_337 + size * 977;
-    for (let attempt = 0; attempt < 4000; attempt++) {
-      const puzzle = generatePuzzle(size, seed++);
-      const rating = rate(size, puzzle.regions);
+    for (let attempt = 0; attempt < (stars === 2 ? 600 : 4000); attempt++) {
+      const puzzle = generatePuzzle(size, seed++, stars);
+      if (!puzzle) break;
+      const rating = rate(size, puzzle.regions, stars);
       if (!rating.solved || rating.tier !== tier) continue;
 
-      const score = rating.topAt * 10 + rating.effort;
-      if (!best || score < best.score) best = { puzzle, rating, size, score };
-      if (rating.topAt <= 2 && rating.effort <= (tier <= 2 ? 3 : 6)) break;
+      const value = rating.topAt * 10 + rating.effort;
+      if (!best || value < best.value) best = { puzzle, rating, size, stars, value };
+      if (rating.topAt <= 2 && rating.effort <= (tier <= 2 ? 3 : 8)) break;
     }
     if (best && best.rating.topAt <= 2) break;
   }
@@ -145,72 +197,83 @@ function findLesson(tier) {
   return best;
 }
 
+const levels = buildCampaign(CURVE, 1);
+const levels2 = buildCampaign(CURVE_2, 2);
+
 const lessons = [];
-for (let tier = 1; tier <= 5; tier++) {
+for (const tier of [1, 2, 3, 4, 5, 6]) {
   const lesson = findLesson(tier);
   lessons.push({
     d: tier,
     s: lesson.size,
+    k: lesson.stars,
     r: lesson.puzzle.regions.join(''),
-    a: lesson.puzzle.solution.join(''),
+    a: encode(lesson.puzzle.solution),
   });
   console.log(
-    `lesson tier ${tier}: ${lesson.size}x${lesson.size}, technique appears at step ${lesson.rating.topAt} of ${lesson.rating.effort}`,
+    `\nlesson tier ${tier} (${lesson.stars}★): ${lesson.size}x${lesson.size}, technique appears at step ${lesson.rating.topAt} of ${lesson.rating.effort}`,
   );
 }
 
-const lessonBody = lessons
-  .map((lesson) => `  { d: ${lesson.d}, s: ${lesson.s}, r: '${lesson.r}', a: '${lesson.a}' },`)
-  .join('\n');
-
-const body = levels
-  .map((level) => `  { n: ${level.n}, s: ${level.s}, d: ${level.d}, r: '${level.r}', a: '${level.a}' },`)
-  .join('\n');
+const asRows = (list, extra = '') =>
+  list
+    .map((level) => `  { ${extra}n: ${level.n ?? 0}, s: ${level.s}, d: ${level.d}, r: '${level.r}', a: '${level.a}' },`)
+    .join('\n');
 
 writeFileSync(
   new URL('../src/levels.js', import.meta.url),
   `// GENERATED FILE - do not edit by hand.
 // Regenerate with: node tools/generate-levels.mjs
 //
-//   n = level number, s = board size,
+//   n = level number, s = board size, k = pieces per unit,
 //   d = hardest deduction tier needed (see analyze.js TECHNIQUES),
-//   r = region index per cell (row-major), a = solved column per row
+//   r = region index per cell (row-major), a = solution cells in base 36
 
 export const LEVELS = [
-${body}
+${asRows(levels)}
 ];
 
-export function loadLevel(number) {
-  return unpack(LEVELS.find((entry) => entry.n === number));
+export const LEVELS_TWO_STAR = [
+${asRows(levels2)}
+];
+
+export const LESSONS = [
+${lessons.map((lesson) => `  { d: ${lesson.d}, s: ${lesson.s}, k: ${lesson.k}, r: '${lesson.r}', a: '${lesson.a}' },`).join('\n')}
+];
+
+export function campaign(stars = 1) {
+  return stars === 2 ? LEVELS_TWO_STAR : LEVELS;
 }
 
-// One teaching board per technique, keyed by tier.
-export const LESSONS = [
-${lessonBody}
-];
+export function loadLevel(number, stars = 1) {
+  return unpack(campaign(stars).find((entry) => entry.n === number), stars);
+}
 
 export function loadLesson(tier) {
-  return unpack(LESSONS.find((entry) => entry.d === tier));
+  const lesson = LESSONS.find((entry) => entry.d === tier);
+  return unpack(lesson, lesson?.k ?? 1);
 }
 
-function unpack(entry) {
+function unpack(entry, stars) {
   if (!entry) return null;
   return {
     number: entry.n,
     size: entry.s,
+    stars: entry.k ?? stars,
     tier: entry.d,
     regions: [...entry.r].map(Number),
-    solution: [...entry.a].map(Number),
+    solution: (entry.a.match(/../g) ?? []).map((pair) => parseInt(pair, 36)),
   };
 }
 `,
 );
 
-console.log('\ncurve:');
+console.log('\n1-star curve:');
 for (const band of CURVE) {
   const first = levels.find((level) => level.s === band.size && level.d === band.tier);
-  console.log(
-    `  ${String(band.count).padStart(3)} levels  ${band.size}x${band.size}  tier ${band.tier} ${techniqueOf(band.tier).name}` +
-      `   (effort ${first.effort}…)`,
-  );
+  console.log(`  ${String(band.count).padStart(3)}  ${band.size}x${band.size}  tier ${band.tier} ${techniqueOf(band.tier).name}  (effort ${first.effort}…)`);
+}
+console.log('\n2-star campaign:');
+for (const level of levels2) {
+  console.log(`  #${String(level.n).padStart(2)}  ${level.s}x${level.s}  tier ${level.d}  ${level.effort} steps, ${level.top} of them ${techniqueOf(level.d).name}`);
 }

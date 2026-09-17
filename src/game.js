@@ -6,10 +6,11 @@ export const SHIBA = 2;
 export const AUTO = 3; // cross the game filled in automatically
 
 export class Game {
-  constructor({ size, regions, solution, autoMark = true }) {
+  constructor({ size, regions, solution, stars = 1, autoMark = true }) {
     this.size = size;
+    this.stars = stars;
     this.regions = regions;
-    this.solution = solution;
+    this.solution = solution; // cell indices, `size * stars` of them
     this.autoMark = autoMark;
     this.cells = new Int8Array(size * size);
     this.history = [];
@@ -77,7 +78,31 @@ export class Game {
     this.refreshAuto();
   }
 
-  /** Re-derive the automatic crosses from the shibas currently on the board. */
+  /** Every cell of the row, column and region a cell belongs to. */
+  units(index) {
+    const { size } = this;
+    const row = this.rowOf(index);
+    const col = this.colOf(index);
+    const region = this.regions[index];
+
+    const across = [];
+    const down = [];
+    const area = [];
+    for (let k = 0; k < size; k++) {
+      across.push(this.index(row, k));
+      down.push(this.index(k, col));
+    }
+    for (let j = 0; j < this.cells.length; j++) {
+      if (this.regions[j] === region) area.push(j);
+    }
+    return [across, down, area];
+  }
+
+  /**
+   * Re-derive the automatic crosses. A piece always rules out the eight cells
+   * around it, but its row, column and region only close once they hold their
+   * full quota — at two pieces per unit, one piece leaves room for another.
+   */
   refreshAuto() {
     for (let i = 0; i < this.cells.length; i++) {
       if (this.cells[i] === AUTO) this.cells[i] = EMPTY;
@@ -85,19 +110,10 @@ export class Game {
     if (!this.autoMark) return;
 
     const { size } = this;
-    for (let i = 0; i < this.cells.length; i++) {
-      if (this.cells[i] !== SHIBA) continue;
+    for (const i of this.shibas()) {
       const row = this.rowOf(i);
       const col = this.colOf(i);
-      const region = this.regions[i];
 
-      for (let k = 0; k < size; k++) {
-        this.markAuto(this.index(row, k));
-        this.markAuto(this.index(k, col));
-      }
-      for (let j = 0; j < this.cells.length; j++) {
-        if (this.regions[j] === region) this.markAuto(j);
-      }
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const r = row + dr;
@@ -105,6 +121,11 @@ export class Game {
           if (r < 0 || c < 0 || r >= size || c >= size) continue;
           this.markAuto(this.index(r, c));
         }
+      }
+
+      for (const unit of this.units(i)) {
+        if (unit.filter((j) => this.cells[j] === SHIBA).length < this.stars) continue;
+        for (const j of unit) this.markAuto(j);
       }
     }
   }
@@ -121,7 +142,7 @@ export class Game {
     return placed;
   }
 
-  /** Indices of shibas that break a rule, with the reason for the first clash. */
+  /** Indices of pieces that break a rule, with the reason for the first clash. */
   conflicts() {
     const placed = this.shibas();
     const bad = new Map();
@@ -129,31 +150,46 @@ export class Game {
       if (!bad.has(index)) bad.set(index, reason);
     };
 
+    // Touching is always wrong; sharing a line or a region is only wrong once
+    // there are more than `stars` of them in it.
     for (let a = 0; a < placed.length; a++) {
       for (let b = a + 1; b < placed.length; b++) {
         const i = placed[a];
         const j = placed[b];
-        let reason = null;
-        if (this.rowOf(i) === this.rowOf(j)) reason = 'row';
-        else if (this.colOf(i) === this.colOf(j)) reason = 'col';
-        else if (this.regions[i] === this.regions[j]) reason = 'region';
-        else if (
+        if (
           Math.abs(this.rowOf(i) - this.rowOf(j)) <= 1 &&
           Math.abs(this.colOf(i) - this.colOf(j)) <= 1
         ) {
-          reason = 'touch';
-        }
-        if (reason) {
-          note(i, reason);
-          note(j, reason);
+          note(i, 'touch');
+          note(j, 'touch');
         }
       }
     }
+
+    const tally = (key, reason) => {
+      const groups = new Map();
+      for (const index of placed) {
+        const bucket = key(index);
+        if (!groups.has(bucket)) groups.set(bucket, []);
+        groups.get(bucket).push(index);
+      }
+      for (const members of groups.values()) {
+        if (members.length <= this.stars) continue;
+        for (const index of members) note(index, reason);
+      }
+    };
+
+    tally((i) => this.rowOf(i), 'row');
+    tally((i) => this.colOf(i), 'col');
+    tally((i) => this.regions[i], 'region');
+
     return bad;
   }
 
   isSolved() {
-    return this.shibas().length === this.size && this.conflicts().size === 0;
+    // With every unit capped and the full count on the board, each unit must
+    // hold exactly its quota.
+    return this.shibas().length === this.size * this.stars && this.conflicts().size === 0;
   }
 
   /**
@@ -161,7 +197,7 @@ export class Game {
    * one, otherwise reveal a correct shiba.
    */
   hint() {
-    const correct = new Set(this.solution.map((col, row) => this.index(row, col)));
+    const correct = new Set(this.solution);
 
     for (const index of this.shibas()) {
       if (!correct.has(index)) {

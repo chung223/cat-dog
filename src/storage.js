@@ -10,6 +10,7 @@ const DEFAULTS = {
     showTimer: true,
     strict: true, // three mistakes and the puzzle is over
     mascot: 'poop',
+    stars: 1,
     name: '',
   },
   daily: {}, // 'YYYY-MM-DD' -> { seconds, mistakes }
@@ -60,13 +61,17 @@ export function getProgress() {
   return state.progress;
 }
 
-export function getLevelRecord(number) {
-  return state.progress[number] || null;
+// The one-star campaign keeps bare numbers so existing saves still read.
+const levelKey = (number, stars) => (stars === 2 ? `2:${number}` : String(number));
+
+export function getLevelRecord(number, stars = 1) {
+  return state.progress[levelKey(number, stars)] || null;
 }
 
-export function recordClear(number, seconds, clean) {
-  const previous = state.progress[number];
-  state.progress[number] = {
+export function recordClear(number, seconds, clean, stars = 1) {
+  const key = levelKey(number, stars);
+  const previous = state.progress[key];
+  state.progress[key] = {
     best: previous ? Math.min(previous.best, seconds) : seconds,
     clean: Boolean(previous?.clean) || clean,
   };
@@ -82,14 +87,14 @@ export function setLastLevel(number) {
   write(state);
 }
 
-export function clearedCount() {
-  return Object.keys(state.progress).length;
+export function clearedCount(stars = 1) {
+  return Object.keys(state.progress).filter((key) => key.startsWith('2:') === (stars === 2)).length;
 }
 
-export function highestUnlocked() {
+export function highestUnlocked(stars = 1, total = 100) {
   // Everything up to the first unfinished level, plus that level itself.
   let level = 1;
-  while (level < 100 && state.progress[level]) level++;
+  while (level < total && state.progress[levelKey(level, stars)]) level++;
   return level;
 }
 

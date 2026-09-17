@@ -1,6 +1,6 @@
 // Screens, input handling and rendering.
 
-import { LEVELS, loadLevel, loadLesson } from './levels.js';
+import { campaign, loadLevel, loadLesson } from './levels.js';
 import { generatePuzzle } from './puzzle.js';
 import { Game, EMPTY, MARK, SHIBA, AUTO } from './game.js';
 import { TECHNIQUES, findNext, rate, techniqueOf } from './analyze.js';
@@ -10,17 +10,17 @@ import { fetchTop, submitScore, leaderboardEnabled } from './leaderboard.js';
 
 const $ = (id) => document.getElementById(id);
 
-const TOTAL_LEVELS = LEVELS.length;
 const DOUBLE_TAP_MS = 330;
 const MAX_MISTAKES = 3;
 
 // Board size of the daily puzzle, by weekday. Sunday gets the chunky one.
 const DAILY_SIZES = [9, 7, 8, 8, 9, 8, 9];
 
-// The level where each technique first becomes unavoidable.
-const FIRST_OF_TIER = new Map();
-for (const level of LEVELS) {
-  if (!FIRST_OF_TIER.has(level.d)) FIRST_OF_TIER.set(level.d, level.n);
+const totalLevels = () => campaign(state.stars).length;
+
+/** The level where each technique first becomes unavoidable. */
+function firstOfTier(tier) {
+  return campaign(state.stars).find((level) => level.d === tier)?.n ?? null;
 }
 const offered = new Set();
 
@@ -28,7 +28,8 @@ const SIZE_LABELS = { 5: '入門', 6: '輕鬆', 7: '普通', 8: '偏難', 9: '�
 
 const state = {
   view: 'home',
-  mode: 'campaign', // campaign | endless | daily
+  stars: 1, // pieces per row, column and region
+  mode: 'campaign', // campaign | endless | daily | lesson
   levelNumber: 1,
   endlessSize: 7,
   dayKey: null,
@@ -46,6 +47,7 @@ const state = {
 };
 
 let mascot = getMascot(store.getSettings().mascot);
+state.stars = store.getSettings().stars ?? 1;
 
 /* ── Mascot theme ────────────────────────────────── */
 
@@ -121,9 +123,10 @@ window.addEventListener('popstate', (event) => {
 /* ── Home ────────────────────────────────────────── */
 
 function refreshHome() {
-  const cleared = store.clearedCount();
-  $('progress-text').textContent = `${cleared} / ${TOTAL_LEVELS}`;
-  $('progress-fill').style.width = `${(cleared / TOTAL_LEVELS) * 100}%`;
+  const total = totalLevels();
+  const cleared = store.clearedCount(state.stars);
+  $('progress-text').textContent = `${cleared} / ${total}`;
+  $('progress-fill').style.width = `${(cleared / total) * 100}%`;
   const board = store.latestBoard();
   // A daily board from an earlier date can no longer be reached.
   const stale = board?.mode === 'daily' && board.key !== `daily:${store.dateKey()}`;
@@ -151,8 +154,8 @@ function buildLevelGrid() {
   grid.textContent = '';
   const fragment = document.createDocumentFragment();
 
-  for (const level of LEVELS) {
-    const record = store.getLevelRecord(level.n);
+  for (const level of campaign(state.stars)) {
+    const record = store.getLevelRecord(level.n, state.stars);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = record ? 'level-cell done' : 'level-cell';
@@ -167,7 +170,7 @@ function buildLevelGrid() {
         (record ? `，已完成，最佳 ${formatTime(record.best)}` : ''),
     );
     button.addEventListener('click', () =>
-      navigate('game', { mode: 'campaign', levelNumber: level.n }),
+      navigate('game', { mode: 'campaign', levelNumber: level.n, stars: state.stars }),
     );
     fragment.append(button);
   }
@@ -179,10 +182,11 @@ function buildLevelGrid() {
 
 /** One save slot per level, per day, plus a single endless slot. */
 function boardKey() {
+  const suffix = state.stars === 2 ? ':2' : '';
   if (state.mode === 'lesson') return `lesson:${state.levelNumber}`;
-  if (state.mode === 'campaign') return `campaign:${state.levelNumber}`;
+  if (state.mode === 'campaign') return `campaign:${state.levelNumber}${suffix}`;
   if (state.mode === 'daily') return `daily:${state.dayKey}`;
-  return 'endless';
+  return `endless${suffix}`;
 }
 
 function persist() {
@@ -194,6 +198,7 @@ function persist() {
     mode: state.mode,
     levelNumber: state.levelNumber,
     endlessSize: state.endlessSize,
+    stars: state.stars,
     cells: Array.from(game.cells),
     seconds: state.seconds,
     mistakes: state.mistakes,
@@ -202,15 +207,16 @@ function persist() {
     // an endless board is one of a kind, so it travels with its save.
     puzzle:
       state.mode === 'endless'
-        ? { size: game.size, regions: game.regions, solution: game.solution }
+        ? { size: game.size, stars: game.stars, regions: game.regions, solution: game.solution }
         : undefined,
   });
 }
 
 function boardLabel(board) {
-  if (board.mode === 'campaign') return `第 ${board.levelNumber} 關`;
+  const badge = board.stars === 2 ? '⭐⭐ ' : '';
+  if (board.mode === 'campaign') return `${badge}第 ${board.levelNumber} 關`;
   if (board.mode === 'daily') return '每日挑戰';
-  return `無盡 ${board.endlessSize}×${board.endlessSize}`;
+  return `${badge}無盡 ${board.endlessSize}×${board.endlessSize}`;
 }
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -260,9 +266,11 @@ function startPuzzle({
   mode = state.mode,
   levelNumber = state.levelNumber,
   endlessSize = state.endlessSize,
+  stars = state.stars,
   resume = false,
   ready = null,
 } = {}) {
+  state.stars = mode === 'daily' ? 1 : stars;
   state.mode = mode;
   state.levelNumber = levelNumber;
   state.endlessSize = endlessSize;
@@ -270,16 +278,17 @@ function startPuzzle({
   let puzzle;
   let tier;
   if (mode === 'campaign') {
-    puzzle = loadLevel(levelNumber);
+    puzzle = loadLevel(levelNumber, state.stars);
     tier = puzzle.tier;
     store.setLastLevel(levelNumber);
-    $('topbar-title').textContent = `第 ${levelNumber} 關`;
+    $('topbar-title').textContent = `${state.stars === 2 ? '⭐⭐ ' : ''}第 ${levelNumber} 關`;
     $('hud-level-label').textContent = '關卡';
     $('hud-level').textContent = String(levelNumber);
     $('btn-next-puzzle').hidden = true;
   } else if (mode === 'lesson') {
     puzzle = loadLesson(levelNumber);
     tier = levelNumber;
+    state.stars = puzzle.stars;
     $('topbar-title').textContent = `第 ${levelNumber} 課`;
     $('hud-level-label').textContent = '課程';
     $('hud-level').textContent = `${levelNumber} / 5`;
@@ -296,17 +305,22 @@ function startPuzzle({
   } else {
     const saved = resume ? store.loadBoard('endless') : null;
     puzzle =
-      ready ?? saved?.puzzle ?? generatePuzzle(endlessSize, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+      ready ??
+      saved?.puzzle ??
+      generatePuzzle(endlessSize, (Date.now() ^ (Math.random() * 1e9)) >>> 0, state.stars);
     endlessSize = puzzle.size;
     state.endlessSize = endlessSize;
-    $('topbar-title').textContent = '無盡模式';
+    $('topbar-title').textContent = `${state.stars === 2 ? '⭐⭐ ' : ''}無盡模式`;
     $('hud-level-label').textContent = '盤面';
     $('hud-level').textContent = `${endlessSize}×${endlessSize}`;
     $('btn-next-puzzle').hidden = false;
   }
 
   // Daily and endless boards are fresh, so their difficulty is measured here.
-  state.tier = tier ?? rate(puzzle.size, puzzle.regions).tier ?? 5;
+  // Rating a two-star board costs seconds, and they all land on the top tier
+  // anyway, so those are labelled without asking the solver.
+  state.tier =
+    tier ?? (state.stars === 2 ? 6 : (rate(puzzle.size, puzzle.regions, 1).tier ?? 6));
 
   const settings = store.getSettings();
   state.game = new Game({ ...puzzle, autoMark: settings.autoMark });
@@ -344,7 +358,7 @@ function startPuzzle({
   // First level of a new technique? Offer the lesson before they hit the wall.
   if (
     mode === 'campaign' &&
-    FIRST_OF_TIER.get(state.tier) === levelNumber &&
+    firstOfTier(state.tier) === levelNumber &&
     !store.lessonDone(state.tier) &&
     !offered.has(state.tier)
   ) {
@@ -411,7 +425,7 @@ function paintBoard() {
     cell.setAttribute('aria-label', `第 ${row} 列第 ${col} 欄，${label}`);
   }
 
-  $('hud-count').textContent = `${game.shibas().length} / ${game.size}`;
+  $('hud-count').textContent = `${game.shibas().length} / ${game.size * game.stars}`;
   $('btn-undo').disabled = game.history.length === 0;
 
   if (conflicts.size > 0) {
@@ -601,8 +615,7 @@ function placeOrRemove(index) {
   game.toggleShiba(index);
 
   if (!placing || !state.strict) return;
-  const row = Math.floor(index / game.size);
-  if (game.solution[row] === index % game.size) return;
+  if (game.solution.includes(index)) return;
 
   state.mistakes++;
   game.cells[index] = MARK; // it is provably wrong, so leave a cross behind
@@ -681,7 +694,7 @@ function win() {
   const clean = game.hintsUsed === 0 && state.mistakes === 0;
 
   if (state.mode === 'campaign') {
-    store.recordClear(state.levelNumber, state.seconds, clean);
+    store.recordClear(state.levelNumber, state.seconds, clean, state.stars);
   } else if (state.mode === 'daily') {
     store.recordDaily(state.dayKey, state.seconds, state.mistakes);
   } else if (state.mode === 'lesson') {
@@ -702,7 +715,8 @@ function win() {
   setHint('全部找到了！', 'good');
 
   setTimeout(() => {
-    const record = state.mode === 'campaign' ? store.getLevelRecord(state.levelNumber) : null;
+    const record =
+      state.mode === 'campaign' ? store.getLevelRecord(state.levelNumber, state.stars) : null;
     $('win-title').textContent = clean ? '完美過關！' : '過關！';
 
     const lines = [`用時 <b>${formatTime(state.seconds)}</b>`];
@@ -728,7 +742,7 @@ function win() {
       $('win-stats').innerHTML = `用時 <b>${formatTime(state.seconds)}</b>`;
     }
 
-    const isLast = state.mode === 'campaign' && state.levelNumber >= TOTAL_LEVELS;
+    const isLast = state.mode === 'campaign' && state.levelNumber >= totalLevels();
     const lastLesson = state.mode === 'lesson' && state.levelNumber >= 5;
     $('btn-win-next').textContent =
       state.mode === 'campaign' ? '下一關' : state.mode === 'lesson' ? '下一課' : '再來一題';
@@ -763,11 +777,16 @@ $('btn-continue').addEventListener('click', () => {
       mode: board.mode,
       levelNumber: board.levelNumber,
       endlessSize: board.endlessSize,
+      stars: board.stars ?? 1,
       resume: true,
     });
     return;
   }
-  navigate('game', { mode: 'campaign', levelNumber: store.highestUnlocked() });
+  navigate('game', {
+    mode: 'campaign',
+    levelNumber: store.highestUnlocked(state.stars, totalLevels()),
+    stars: state.stars,
+  });
 });
 
 addEventListener('pagehide', persist);
@@ -777,7 +796,8 @@ document.addEventListener('visibilitychange', () => {
 $('btn-daily').addEventListener('click', () => navigate('game', { mode: 'daily' }));
 $('btn-levels').addEventListener('click', () => navigate('levels'));
 $('btn-endless').addEventListener('click', () => {
-  paintPicker($('size-grid'), endless.size, 'size');
+  endless.stars = state.stars;
+  paintEndless();
   paintPicker($('tier-grid'), endless.tier, 'tier');
   $('dlg-endless').showModal();
 });
@@ -804,14 +824,14 @@ $('btn-hint').addEventListener('click', () => {
   // Feed the crosses back in so each hint moves on instead of repeating
   // itself. A cross sitting on a solved square is the player's mistake, so it
   // is left out — the hint will ask them to place there and expose it.
-  const correct = new Set(game.solution.map((col, row) => row * game.size + col));
+  const correct = new Set(game.solution);
   const crossed = [];
   for (let i = 0; i < game.cells.length; i++) {
     const value = game.cells[i];
     if ((value === MARK || value === AUTO) && !correct.has(i)) crossed.push(i);
   }
 
-  const step = findNext(game.size, game.regions, game.shibas(), crossed);
+  const step = findNext(game.size, game.regions, game.shibas(), crossed, game.stars);
 
   if (step.type === 'wrong') {
     game.snapshot();
@@ -827,7 +847,8 @@ $('btn-hint').addEventListener('click', () => {
 
   if (step.type === 'move') {
     game.snapshot();
-    if (step.place !== undefined) game.cells[step.place] = SHIBA;
+    // A unit can owe more than one piece, so this is always a list.
+    for (const cell of step.place ?? []) game.cells[cell] = SHIBA;
     for (const index of step.exclude ?? []) {
       if (game.cells[index] === EMPTY || game.cells[index] === AUTO) game.cells[index] = MARK;
     }
@@ -860,7 +881,12 @@ $('btn-next-puzzle').addEventListener('click', () =>
 $('btn-win-next').addEventListener('click', () => {
   $('dlg-win').close();
   if (state.mode === 'campaign') {
-    navigate('game', { mode: 'campaign', levelNumber: state.levelNumber + 1, replace: true });
+    navigate('game', {
+      mode: 'campaign',
+      levelNumber: state.levelNumber + 1,
+      stars: state.stars,
+      replace: true,
+    });
   } else if (state.mode === 'lesson') {
     navigate('game', { mode: 'lesson', levelNumber: state.levelNumber + 1, replace: true });
   } else {
@@ -928,6 +954,22 @@ $('btn-fail-relax').addEventListener('click', () => {
 $('btn-fail-back').addEventListener('click', () => {
   $('dlg-fail').close();
   history.back();
+});
+
+// Which campaign the home screen is pointing at
+function paintModeSwitch() {
+  for (const button of $('mode-switch').children) {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.stars) === state.stars));
+  }
+}
+
+$('mode-switch').addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  state.stars = Number(button.dataset.stars);
+  store.setSetting('stars', state.stars);
+  paintModeSwitch();
+  refreshHome();
 });
 
 // Leaderboard
@@ -1092,7 +1134,40 @@ $('btn-offer-learn').addEventListener('click', () => {
 $('btn-offer-skip').addEventListener('click', () => $('dlg-offer').close());
 
 // Endless-mode pickers
-const endless = { size: 7, tier: 0 };
+const endless = { size: 7, tier: 0, stars: 1 };
+
+// Two pieces per row cannot keep their distance on a small board.
+const MIN_SIZE_FOR = { 1: 5, 2: 8 };
+
+function paintEndless() {
+  paintPicker($('star-grid'), endless.stars, 'stars');
+  const floor = MIN_SIZE_FOR[endless.stars];
+  if (endless.size < floor) endless.size = floor;
+  for (const button of $('size-grid').children) {
+    button.disabled = Number(button.dataset.size) < floor;
+  }
+  paintPicker($('size-grid'), endless.size, 'size');
+  // Every two-star board lands on the top tier, so there is nothing to choose.
+  for (const node of document.querySelectorAll('.tier-only')) {
+    node.hidden = endless.stars === 2;
+  }
+}
+
+for (const option of [
+  { stars: 1, name: '⭐ 一顆', note: '經典' },
+  { stars: 2, name: '⭐⭐ 兩顆', note: '硬派，8×8 起跳' },
+]) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.dataset.stars = String(option.stars);
+  button.innerHTML = `${option.name}<small>${option.note}</small>`;
+  button.addEventListener('click', () => {
+    endless.stars = option.stars;
+    paintEndless();
+  });
+  $('star-grid').append(button);
+}
 
 function paintPicker(container, value, key) {
   for (const button of container.children) {
@@ -1108,7 +1183,7 @@ for (let size = 5; size <= 10; size++) {
   button.innerHTML = `${size}×${size}<small>${SIZE_LABELS[size]}</small>`;
   button.addEventListener('click', () => {
     endless.size = size;
-    paintPicker($('size-grid'), size, 'size');
+    paintEndless();
   });
   $('size-grid').append(button);
 }
@@ -1127,14 +1202,25 @@ for (const option of [{ tier: 0, name: '隨機', color: 'var(--ink-soft)' }, ...
 }
 
 $('btn-endless-go').addEventListener('click', async () => {
+  const base = { mode: 'endless', endlessSize: endless.size, stars: endless.stars };
+
+  if (endless.stars === 2) {
+    // A two-star 10x10 takes a moment to build, so say so rather than freeze.
+    showVeil('在出一題兩顆的…');
+    await nextFrame();
+    const puzzle = generatePuzzle(endless.size, (Date.now() ^ (Math.random() * 1e9)) >>> 0, 2);
+    hideVeil();
+    navigate('game', { ...base, ready: puzzle });
+    return;
+  }
   if (endless.tier === 0) {
-    navigate('game', { mode: 'endless', endlessSize: endless.size });
+    navigate('game', base);
     return;
   }
   showVeil(`在找一題「${techniqueOf(endless.tier).name}」…`);
   const puzzle = await generateAtTier(endless.size, endless.tier);
   hideVeil();
-  navigate('game', { mode: 'endless', endlessSize: endless.size, ready: puzzle });
+  navigate('game', { ...base, ready: puzzle });
 });
 
 // Difficulty legend and the technique rundown in the help sheet
@@ -1201,5 +1287,6 @@ $('btn-reset-progress').addEventListener('click', () => {
 });
 
 applyMascot(mascot.id);
+paintModeSwitch();
 history.replaceState({ view: 'home', fromPop: true }, '');
 render('home');

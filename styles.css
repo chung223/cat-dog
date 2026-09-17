@@ -710,3 +710,40 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: .02em; }
 .board-row .tags { font-size: .72rem; letter-spacing: .05em; }
 .board-row.mine { background: color-mix(in srgb, var(--accent) 17%, var(--surface)); }
 .board-empty { color: var(--ink-soft); font-size: .82rem; padding: 6px 2px; }
+
+/* ── Campaign switch ───────────────────────────────── */
+:root { --t6: #a83a6a; }
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 5px;
+  margin-bottom: 14px;
+}
+
+.mode-switch button {
+  font: inherit;
+  font-weight: 800;
+  font-size: .9rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 4px;
+  cursor: pointer;
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+}
+
+.mode-switch button small { font-size: .64rem; font-weight: 600; letter-spacing: .06em; }
+.mode-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+.star-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 10px; }
+.star-grid .btn { padding: 13px 4px; }
+.star-grid .btn small { display: block; font-size: .66rem; font-weight: 600; color: var(--ink-soft); margin-top: 3px; }
+.star-grid .btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
